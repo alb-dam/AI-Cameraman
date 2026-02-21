@@ -1,66 +1,71 @@
+"""Gestione dell'output video inclusa virtual camera e preview locale."""
+
 import cv2
+import logging
 import pyvirtualcam
 import numpy as np
-from PySide6.QtCore import QThread, Signal
-from input import Video_Input
+from typing import Optional
 
-class Video_Thread(QThread):
-    """Thread background per l'emissione del video verso GUI e OBS."""
-    
-    frame_pronto_gui = Signal(np.ndarray)
-    log_sistema = Signal(str)
+logger = logging.getLogger(__name__)
 
-    def __init__(self, config_manager):
-        super().__init__()
-        self.config = config_manager
-        self.in_esecuzione = True
 
-    def _prepara_input(self):
-        """Inizializza il generatore dal modulo input."""
-        sorgente = self.config.ottieni_valore("sorgente", 0)
-        w = self.config.ottieni_valore("larghezza_target", 1280)
-        h = self.config.ottieni_valore("altezza_target", 720)
-        video_in = Video_Input(sorgente, w, h)
-        return video_in.input_run(), w, h
+class VideoOutput:
+    """Gestione dell'output video inclusa virtual camera e preview locale."""
 
-    def _invia_a_gui(self, frame: np.ndarray) -> np.ndarray:
-        """Converte il frame in RGB e lo emette per la preview GUI."""
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        self.frame_pronto_gui.emit(frame_rgb)
-        return frame_rgb
+    def __init__(self) -> None:
+        """Inizializza il gestore output."""
+        self.cam: Optional[pyvirtualcam.Camera] = None
 
-    def _invia_a_obs(self, cam: pyvirtualcam.Camera, frame_rgb: np.ndarray) -> None:
-        """Invia il frame alla Virtual Camera."""
-        cam.send(frame_rgb)
-        cam.sleep_until_next_frame()
-
-    def output_run(self):
-        """Metodo coordinatore del thread di output."""
+    def initialize_virtual_camera(self, width: int, height: int, fps: int) -> None:
+        """Inizializza la virtual camera per invio frame a OBS."""
+        self.close()
         try:
-            generatore_frame, w, h = self._prepara_input()
-            fps = self.config.ottieni_valore("fps_target", 30)
-            
-            with pyvirtualcam.Camera(width=w, height=h, fps=fps) as cam:
-                self.log_sistema.emit(f"Output avviato: GUI + OBS VirtualCam ({w}x{h})")
-                
-                for frame in generatore_frame:
-                    if not self.in_esecuzione:
-                        break
-                    
-                    # 1. Invio alla GUI (Preview automatica)
-                    frame_rgb = self._invia_a_gui(frame)
-                    
-                    # 2. Invio a OBS
-                    self._invia_a_obs(cam, frame_rgb)
-                    
+            self.cam = pyvirtualcam.Camera(width=width, height=height, fps=fps, fmt=pyvirtualcam.PixelFormat.BGR)
+            logger.info(f"Virtual camera attivata: {self.cam.device} ({width}x{height} @ {fps}fps)")
         except Exception as e:
-            self.log_sistema.emit(f"Errore in Output: {e}")
-        finally:
-            self.log_sistema.emit("Flusso video interrotto.")
+            logger.error(f"Errore inizializzazione virtual camera: {e}")
+            self.cam = None
 
-    def run(self):
-        self.output_run()
+    def send_frame(self, frame: np.ndarray) -> None:
+        """Ridimensiona con letterbox e invia il frame a OBS (Virtual Camera)."""
+        if self.cam is None or frame is None:
+            return
+        padded = self._resize_and_pad(frame, (self.cam.width, self.cam.height))
+        self.cam.send(padded)
 
-    def ferma(self):
-        self.in_esecuzione = False
-        self.wait()
+    @staticmethod
+    def _resize_and_pad(frame: np.ndarray, target_size: tuple) -> np.ndarray:
+        """Letterbox forzato del frame per matchare aspect ratio target."""
+        h, w = frame.shape[:2]
+        tw, th = target_size
+
+        scale = min(tw / w, th / h)
+        nw, nh = int(w * scale), int(h * scale)
+
+        resized = cv2.resize(frame, (nw, nh), interpolation=cv2.INTER_AREA)
+        canvas = np.zeros((th, tw, 3), dtype=np.uint8)
+
+        x_offset = (tw - nw) // 2
+        y_offset = (th - nh) // 2
+        canvas[y_offset:y_offset + nh, x_offset:x_offset + nw] = resized
+        return canvas
+
+    def show_preview(self, frame: np.ndarray, window_name: str = "Local Preview") -> None:
+        """Mostra la preview locale tramite finestra cv2 standard (per test indipendenti)."""
+        if frame is not None:
+            cv2.imshow(window_name, frame)
+            cv2.waitKey(1)
+
+    def close(self) -> None:
+        """Chiude la virtual camera e disattiva ogni finestra cv2."""
+        if self.cam is not None:
+            self.cam.close()
+            self.cam = None
+        cv2.destroyAllWindows()
+
+
+def output_run(width: int = 1920, height: int = 1080, fps: int = 30) -> VideoOutput:
+    """Crea un VideoOutput e inizializza la virtual camera."""
+    vo = VideoOutput()
+    vo.initialize_virtual_camera(width, height, fps)
+    return vo

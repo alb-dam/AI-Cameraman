@@ -1,4 +1,7 @@
-opencv-python
-pyvirtualcam
 PySide6
-pygrabber   
+opencv-python
+numpy
+pyvirtualcam
+ultralytics
+pygrabber
+pyobjc-framework-AVFoundation

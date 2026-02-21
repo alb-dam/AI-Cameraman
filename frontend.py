@@ -1,161 +1,259 @@
+"""Finestra principale: orchestratore puro tra pannelli UI e Backend.
+
+Nessuna logica AI, nessuna logica di elaborazione.
+Solo segnali, callback e coordinazione.
+"""
+
 import sys
-from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                               QHBoxLayout, QComboBox, QPushButton, QLabel, QTextEdit, QSizePolicy)
-from PySide6.QtCore import Qt, Slot, Signal, QObject
-from PySide6.QtGui import QImage, QPixmap
 
-# -------------------------------------------------------------------
-# CLASSE FRONTEND
-# -------------------------------------------------------------------
+import numpy as np
 
-class Pannello_Controllo_Video:
-    """
-    Interfaccia Utente (View).
-    Gestisce il layout a due colonne: Sinistra (Sorgenti) e Destra (Preview, Controlli, Log).
-    """
+from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget,
+                               QHBoxLayout, QVBoxLayout, QGroupBox,
+                               QFileDialog, QPushButton)
+from PySide6.QtCore import Signal, QObject
+from PySide6.QtGui import QCloseEvent
 
-    def __init__(self, controller):
-        self.app = QApplication.instance() or QApplication(sys.argv)
-        self.window = QMainWindow()
-        self.controller = controller
+from config import ConfigManager
+from backend import Backend
+from panels import control_panel_run, preview_panel_run, log_panel_run
 
-    # ==========================================
-    # 1. FUNZIONI DI COSTRUZIONE UI (Atomiche)
-    # ==========================================
 
-    def _imposta_finestra_principale(self) -> QHBoxLayout:
-        """Configura la finestra e restituisce il layout principale a DUE COLONNE (Orizzontale)."""
-        self.window.setWindowTitle("Pannello Video Modulare - Layout a Colonne")
-        self.window.setMinimumSize(1280, 720) # Finestra più larga per ospitare le colonne
-        
-        central_widget = QWidget()
-        self.window.setCentralWidget(central_widget)
-        
-        # Layout principale orizzontale (Sinistra / Destra)
-        return QHBoxLayout(central_widget)
+class UIBridge(QObject):
+    """Bridge thread-safe tra thread del Backend e il thread Main (GUI)."""
+    frame_signal: Signal = Signal(np.ndarray)
+    log_signal: Signal = Signal(str)
 
-    def _costruisci_colonna_sinistra(self, layout_principale: QHBoxLayout):
-        """Crea la colonna di sinistra contenente SOLO il menu a tendina."""
-        lay_sinistra = QVBoxLayout()
-        lay_sinistra.setAlignment(Qt.AlignmentFlag.AlignTop) # Spinge gli elementi in alto
-        
-        self.combo_sorgenti = QComboBox()
-        self.combo_sorgenti.addItem("Seleziona una sorgente...")
-        self.combo_sorgenti.setFixedWidth(250)
-        self.combo_sorgenti.setStyleSheet("padding: 5px; font-size: 14px;")
-        
-        lay_sinistra.addWidget(self.combo_sorgenti)
-        
-        # Aggiungo il layout di sinistra al layout principale
-        layout_principale.addLayout(lay_sinistra)
 
-    def _costruisci_colonna_destra(self, layout_principale: QHBoxLayout):
-        """Crea la colonna di destra assemblando preview, pulsante e log."""
-        lay_destra = QVBoxLayout()
-        
-        # Costruisco i sub-componenti della colonna destra
-        self._costruisci_preview(lay_destra)
-        self._costruisci_pulsante_avvio_ferma(lay_destra)
-        self._costruisci_log(lay_destra)
-        
-        # Aggiungo il layout di destra al layout principale
-        layout_principale.addLayout(lay_destra)
+class MainWindow(QMainWindow):
+    """Orchestratore GUI: compone i pannelli e collega segnali al Backend."""
 
-    def _costruisci_preview(self, layout_genitore: QVBoxLayout):
-        """Genera il riquadro della telecamera a grandezza fissa."""
-        lay_preview = QHBoxLayout()
-        
-        self.lbl_preview = QLabel("In attesa di sorgente...")
-        self.lbl_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_preview.setStyleSheet("background-color: #111; color: #aaa; border: 2px solid #444; font-size: 18px;")
-        self.lbl_preview.setFixedSize(960, 540) # Dimensioni fisse richieste
-        
-        # Centra la preview orizzontalmente nel suo spazio
-        lay_preview.addStretch()
-        lay_preview.addWidget(self.lbl_preview)
-        lay_preview.addStretch()
-        
-        layout_genitore.addLayout(lay_preview)
+    # ── Inizializzazione ────────────────────────────────────────────────
 
-    def _costruisci_pulsante_avvio_ferma(self, layout_genitore: QVBoxLayout):
-        """Genera il pulsante per avviare o fermare l'elaborazione."""
-        lay_pulsante = QHBoxLayout()
-        
-        self.btn_elabora = QPushButton("Avvia/Ferma Elaborazione")
-        self.btn_elabora.setFixedSize(300, 45)
-        self.btn_elabora.setStyleSheet("font-weight: bold; font-size: 15px; background-color: #2b5797; color: white;")
-        
-        # Centra il pulsante orizzontalmente
-        lay_pulsante.addStretch()
-        lay_pulsante.addWidget(self.btn_elabora)
-        lay_pulsante.addStretch()
-        
-        lay_pulsante.setContentsMargins(0, 15, 0, 15) # Margini sopra e sotto il pulsante
-        layout_genitore.addLayout(lay_pulsante)
+    def __init__(self, backend: Backend, config: ConfigManager) -> None:
+        """Inizializza la finestra principale con backend e configurazione."""
+        super().__init__()
+        self.backend: Backend = backend
+        self.config: ConfigManager = config
+        self.bridge = UIBridge()
 
-    def _costruisci_log(self, layout_genitore: QVBoxLayout):
-            """Genera l'area di testo per i log di sistema con font-size esplicito per evitare warning."""
-            self.txt_log = QTextEdit()
-            self.txt_log.setReadOnly(True)
-            
-            # FIX: Aggiunto 'font-size: 11pt;' per evitare l'errore QFont::setPointSize
-            self.txt_log.setStyleSheet(
-                "font-family: Consolas, 'Courier New', monospace; "
-                "font-size: 11pt; "
-                "background-color: #f5f5f5;"
-            )
-            self.txt_log.setPlaceholderText("Log degli eventi di sistema...")
-            
-            layout_genitore.addWidget(self.txt_log)
+        self.setWindowTitle("Video Stream App")
+        self.resize(1000, 600)
 
-    # ==========================================
-    # 2. SEGNALI E AGGIORNAMENTO
-    # ==========================================
+        self._setup_ui()
+        self._connect_signals()
 
-    def _connetti_segnali(self):
-        """Collega le azioni utente ai comandi del controller, e viceversa."""
-        self.combo_sorgenti.currentIndexChanged.connect(
-            lambda idx: self.controller.imposta_sorgente(idx - 1) if idx > 0 else None
+    # ── Setup UI ────────────────────────────────────────────────────────
+
+    def _setup_ui(self) -> None:
+        """Compone il layout a due colonne con i pannelli separati."""
+        main_widget = QWidget()
+        self.setCentralWidget(main_widget)
+        main_layout = QHBoxLayout(main_widget)
+
+        # Colonna sinistra: controlli
+        self.control_panel = control_panel_run()
+        main_layout.addWidget(self.control_panel, stretch=1)
+
+        # Colonna destra: preview + start/stop + log
+        right_group = QGroupBox("Preview e Log")
+        right_layout = QVBoxLayout()
+        right_group.setLayout(right_layout)
+        main_layout.addWidget(right_group, stretch=3)
+
+        self.preview_panel = preview_panel_run()
+        right_layout.addWidget(self.preview_panel)
+
+        self._setup_start_stop_buttons(right_layout)
+
+        self.log_panel = log_panel_run()
+        right_layout.addWidget(self.log_panel)
+
+    def _setup_start_stop_buttons(self, layout: QVBoxLayout) -> None:
+        """Crea i pulsanti Avvia/Ferma sotto la preview."""
+        btn_layout = QHBoxLayout()
+        self.start_btn = QPushButton("Avvia Elaborazione")
+        self.stop_btn = QPushButton("Ferma Elaborazione")
+        self.stop_btn.setEnabled(False)
+        btn_layout.addWidget(self.start_btn)
+        btn_layout.addWidget(self.stop_btn)
+        layout.addLayout(btn_layout)
+
+    # ── Connessione segnali ─────────────────────────────────────────────
+
+    def _connect_signals(self) -> None:
+        """Collega tutti i segnali dei pannelli ai callback di coordinazione."""
+        self._connect_control_panel_signals()
+        self._connect_preview_panel_signals()
+        self._connect_start_stop_signals()
+        self._connect_backend_bridge()
+        self._populate_sources()
+        self._restore_config_to_ui()
+
+        # Avvia auto-preview al lancio applicazione
+        self.backend.start_processing()
+
+    def _connect_control_panel_signals(self) -> None:
+        """Collega i segnali del ControlPanel ai callback."""
+        cp = self.control_panel
+        cp.source_changed.connect(self._on_source_changed)
+        cp.file_requested.connect(self._on_file_select)
+        cp.debug_toggled.connect(self._on_debug_toggled)
+        cp.fixed_zoom_changed.connect(lambda v: self.config.set("fixed_zoom_percent", v))
+        cp.dynamic_zoom_changed.connect(lambda v: self.config.set("dynamic_zoom_percent", v))
+        cp.kalman_changed.connect(lambda v: self.config.set("kalman_preset_percent", v))
+        cp.load_roi_requested.connect(self._on_load_roi)
+        cp.create_roi_requested.connect(self._on_create_roi)
+        cp.save_roi_requested.connect(self._on_save_roi)
+
+    def _connect_preview_panel_signals(self) -> None:
+        """Collega i segnali del PreviewPanel ai callback ROI."""
+        self.preview_panel.roi_point_added.connect(self._on_roi_point_added)
+        self.preview_panel.roi_finalized.connect(self._on_roi_finalized)
+
+    def _connect_start_stop_signals(self) -> None:
+        """Collega i pulsanti start/stop."""
+        self.start_btn.clicked.connect(self._on_start)
+        self.stop_btn.clicked.connect(self._on_stop)
+
+    def _connect_backend_bridge(self) -> None:
+        """Configura il bridge thread-safe tra Backend e pannelli UI."""
+        self.backend.on_frame_ready = self.bridge.frame_signal.emit
+        self.backend.on_log_message = self.bridge.log_signal.emit
+        self.bridge.frame_signal.connect(self._on_frame_received)
+        self.bridge.log_signal.connect(self.log_panel.append_message)
+
+    # ── Popolamento e ripristino configurazione ─────────────────────────
+
+    def _populate_sources(self) -> None:
+        """Trova le webcam disponibili e popola il ControlPanel."""
+        from input import VideoInput
+        available_cams = VideoInput.get_available_cameras()
+        saved_type = self.config.get("source_type")
+        saved_path = self.config.get("source_path")
+        self.control_panel.populate_sources(available_cams, saved_type, saved_path)
+
+    def _restore_config_to_ui(self) -> None:
+        """Ripristina i valori salvati in configurazione nei pannelli."""
+        self.control_panel.restore_config(
+            debug=self.config.get("debug_mode"),
+            fixed_zoom=self.config.get("fixed_zoom_percent"),
+            dynamic_zoom=self.config.get("dynamic_zoom_percent"),
+            kalman=self.config.get("kalman_preset_percent"),
         )
-        self.btn_elabora.clicked.connect(self.controller.esegui_elaborazione_complessa)
 
-        self.controller.invia_frame_gui.connect(self._aggiorna_preview)
-        self.controller.invia_log_gui.connect(self.txt_log.append)
+    # ── Callback: sorgente video ────────────────────────────────────────
 
-    @Slot(object)
-    def _aggiorna_preview(self, frame_rgb):
-        """Dipinge il frame sulla QLabel mantenendo l'aspect ratio."""
-        h, w, ch = frame_rgb.shape
-        q_img = QImage(frame_rgb.data, w, h, ch * w, QImage.Format_RGB888)
-        self.lbl_preview.setPixmap(QPixmap.fromImage(q_img).scaled(
-            self.lbl_preview.size(), Qt.AspectRatioMode.KeepAspectRatio
-        ))
+    def _on_source_changed(self, source_data: tuple) -> None:
+        """Gestisce il cambio sorgente video dal menu a tendina."""
+        if not source_data:
+            return
 
-    # ==========================================
-    # 3. METODO COORDINATORE
-    # ==========================================
+        source_type, source_path = source_data
+        is_file = (source_type == "file")
+        self.control_panel.set_file_button_visible(is_file)
 
-    def gui_run(self):
-        """
-        Metodo principale (Runner).
-        Assembla le colonne, connette la logica e avvia l'interfaccia.
-        """
-        # 1. Imposto il layout radice a due colonne
-        layout_principale = self._imposta_finestra_principale()
-        
-        # 2. Assemblo la colonna di sinistra e poi quella di destra
-        self._costruisci_colonna_sinistra(layout_principale)
-        self._costruisci_colonna_destra(layout_principale)
-        
-        # 3. Connetto i segnali UI-Backend
-        self._connetti_segnali()
-        
-        # 4. Inizializzo i dati
-        dispositivi = self.controller.backend_run()
-        self.combo_sorgenti.addItems(dispositivi)
-        
-        # 5. Avvio il loop
-        self.window.show()
-        sys.exit(self.app.exec())
+        self.config.set("source_type", source_type)
+        if not is_file:
+            self.config.set("source_path", str(source_path))
+
+        self.backend.start_processing()
+
+    def _on_file_select(self) -> None:
+        """Apre il dialogo per selezionare un file video."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Seleziona File Video", "", "Video Files (*.mp4 *.avi *.mkv)"
+        )
+        if not file_path:
+            return
+        self.config.set("source_path", file_path)
+        self.log_panel.append_message(f"File video selezionato: {file_path}")
+        self.backend.start_processing()
+
+    def _on_debug_toggled(self, checked: bool) -> None:
+        """Attiva/disattiva la modalità debug."""
+        self.config.set("debug_mode", checked)
+
+    # ── Callback: start/stop ────────────────────────────────────────────
+
+    def _on_start(self) -> None:
+        """Avvia l'invio a OBS."""
+        self.start_btn.setEnabled(False)
+        self.stop_btn.setEnabled(True)
+        self.backend.start_obs_output()
+
+    def _on_stop(self) -> None:
+        """Ferma l'invio a OBS."""
+        self.stop_btn.setEnabled(False)
+        self.start_btn.setEnabled(True)
+        self.backend.stop_obs_output()
+
+    # ── Callback: ROI ───────────────────────────────────────────────────
+
+    def _on_load_roi(self) -> None:
+        """Carica una ROI da file JSON."""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Seleziona ROI", "", "JSON Files (*.json)"
+        )
+        if not file_path:
+            return
+        self.backend.load_roi(file_path)
+        self.config.set("last_roi_path", file_path)
+        self.log_panel.append_message(f"ROI caricata: {file_path}")
+
+    def _on_create_roi(self) -> None:
+        """Avvia la modalità editing ROI."""
+        self.backend.start_roi_selection()
+        self.preview_panel.set_roi_editing(True)
+        self.log_panel.append_message(
+            "Modalità editing ROI avviata. Clicca sulla preview per aggiungere punti. "
+            "Click destro per terminare."
+        )
+
+    def _on_save_roi(self) -> None:
+        """Salva la ROI corrente su file."""
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Salva ROI", "roi.json", "JSON Files (*.json)"
+        )
+        if not file_path:
+            return
+        self.backend.save_roi(file_path)
+        self.config.set("last_roi_path", file_path)
+        self.log_panel.append_message(f"ROI salvata: {file_path}")
+
+    def _on_roi_point_added(self, norm_x: float, norm_y: float) -> None:
+        """Aggiunge un punto alla ROI in editing."""
+        self.backend.add_roi_point(norm_x, norm_y)
+
+    def _on_roi_finalized(self) -> None:
+        """Finalizza la ROI corrente e disattiva l'editing."""
+        self.backend.finalize_roi()
+        self.preview_panel.set_roi_editing(False)
+        self.log_panel.append_message("ROI finalizzata.")
+
+    # ── Callback: frame dal backend ─────────────────────────────────────
+
+    def _on_frame_received(self, frame: np.ndarray) -> None:
+        """Riceve un frame dal backend, applica overlay ROI e aggiorna preview."""
+        if frame is None:
+            return
+
+        if self.backend.is_roi_editing:
+            self.preview_panel.draw_roi_overlay(frame, self.backend.roi_points)
+
+        self.preview_panel.update_frame(frame)
+
+    # ── Lifecycle ───────────────────────────────────────────────────────
+
+    def closeEvent(self, event: QCloseEvent) -> None:
+        """Assicura l'arresto del backend alla chiusura dell'interfaccia."""
+        self.backend.stop_processing()
+        super().closeEvent(event)
 
 
+def frontend_run(backend: Backend, config: ConfigManager) -> None:
+    """Crea la QApplication, la finestra MainWindow e avvia il loop Qt."""
+    app = QApplication(sys.argv)
+    window = MainWindow(backend, config)
+    window.show()
+    sys.exit(app.exec())

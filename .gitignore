@@ -1,3 +1,6 @@
-/.venv
-/__pycache__
+*.pt
 *.mp4
+*.json
+/__pycache__
+/.venv
+/panels/__pycache__

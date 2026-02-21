@@ -1,7 +1,14 @@
 {
-    "sorgente": 0,
-    "larghezza_target": 1280,
-    "altezza_target": 720,
-    "fps_target": 30,
-    "in_elaborazione": false
+    "source_type": "file",
+    "source_path": "/Users/alberto/Documents/Code/ai-virtual-ptz/Video/taglio.mp4",
+    "debug_mode": true,
+    "last_roi_path": "/Users/alberto/Documents/Code/Antigravity/AI-Cameraman/roi.json",
+    "fixed_zoom_percent": 60,
+    "dynamic_zoom_percent": 93,
+    "kalman_preset_percent": 100,
+    "kalman_q_smooth": 0.001,
+    "kalman_r_smooth": 100.0,
+    "kalman_q_reactive": 100.0,
+    "kalman_r_reactive": 0.001,
+    "yolo_model": "yolo26n.pt"
 }
