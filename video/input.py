@@ -2,11 +2,12 @@
 
 import cv2
 import platform
-import logging
 import sys
 from typing import List, Tuple, Any, Optional, Union
 
-logger = logging.getLogger(__name__)
+from app.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class VideoInput:
@@ -37,7 +38,6 @@ class VideoInput:
                 logger.warning("Modulo AVFoundation (pyobjc) non trovato. Fallback a indici numerici.")
                 return ["Webcam 0 (Mac)", "Webcam 1 (Mac)", "Webcam 2 (Mac)"]
         else:
-            print(f"Sistema operativo '{sistema}' non supportato a pieno. Fallback a 0.")
             return ["Webcam Default", "Webcam 1"]
 
     def initialize_source(self, source_type: str, source_value: Union[int, str, None] = None) -> None:

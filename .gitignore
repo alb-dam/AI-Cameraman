@@ -1,6 +1,8 @@
+.DS_Store
 *.pt
 *.mp4
 *.json
-/__pycache__
 /.venv
-/panels/__pycache__
+/__pycache__
+/*/__pycache__
+/*/*/__pycache__

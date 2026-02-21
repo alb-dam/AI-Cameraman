@@ -1,12 +1,13 @@
 """Gestione dell'output video inclusa virtual camera e preview locale."""
 
 import cv2
-import logging
 import pyvirtualcam
 import numpy as np
 from typing import Optional
 
-logger = logging.getLogger(__name__)
+from app.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 class VideoOutput:
@@ -30,7 +31,12 @@ class VideoOutput:
         """Ridimensiona con letterbox e invia il frame a OBS (Virtual Camera)."""
         if self.cam is None or frame is None:
             return
-        padded = self._resize_and_pad(frame, (self.cam.width, self.cam.height))
+            
+        if frame.shape[:2] == (self.cam.height, self.cam.width):
+            padded = frame
+        else:
+            padded = self._resize_and_pad(frame, (self.cam.width, self.cam.height))
+            
         self.cam.send(padded)
 
     @staticmethod
@@ -51,7 +57,7 @@ class VideoOutput:
         return canvas
 
     def show_preview(self, frame: np.ndarray, window_name: str = "Local Preview") -> None:
-        """Mostra la preview locale tramite finestra cv2 standard (per test indipendenti)."""
+        """Mostra la preview locale tramite finestra cv2 standard."""
         if frame is not None:
             cv2.imshow(window_name, frame)
             cv2.waitKey(1)

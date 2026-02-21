@@ -1,26 +1,29 @@
-"""Entry point dell'applicazione AI-Cameraman."""
+"""Entry point dell'applicazione AI-Cameraman (Clean Architecture)."""
 
 import logging
 
-from config import config_run
-from backend import Backend
-from frontend import frontend_run
+from app.logger import setup_logger
+from config.settings import settings_run
+from app.orchestrator import Orchestrator
+from gui.main_window import main_window_run
 
+# Inizializziamo subito il logging per tutta l'applicazione
+setup_logger(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
 class AICameramanApp:
-    """Classe principale che orchestra l'avvio dell'applicazione."""
+    """Classe principale che istanzia e avvia l'applicazione."""
 
     def __init__(self) -> None:
-        """Inizializza la configurazione e il backend."""
+        """Inizializza la configurazione e l'orchestratore."""
         logger.info("Inizializzazione AI-Cameraman in corso...")
-        self.config = config_run()
-        self.backend = Backend(self.config)
+        self.settings = settings_run()
+        self.orchestrator = Orchestrator(self.settings)
 
     def run(self) -> None:
-        """Lancia l'interfaccia grafica e avvia l'applicazione."""
-        frontend_run(self.backend, self.config)
+        """Lancia l'interfaccia grafica avviando il main loop."""
+        main_window_run(self.orchestrator, self.settings)
 
 
 def main_run() -> None:
@@ -30,5 +33,4 @@ def main_run() -> None:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     main_run()

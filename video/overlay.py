@@ -7,8 +7,16 @@ import cv2
 import numpy as np
 from typing import Dict, Any
 
-from detector import DetectionResult
-from roi import ROIManager
+from app.logger import get_logger
+
+logger = get_logger(__name__)
+
+# Dobbiamo ritardare l'import di DetectionResult per evitare dipendenze circolari
+# se necessario, ma lo prenderemo dal core
+try:
+    from core.detector import DetectionResult
+except ImportError:
+    DetectionResult = Any
 
 
 class DebugOverlay:
@@ -19,7 +27,7 @@ class DebugOverlay:
         frame: np.ndarray,
         det_out: DetectionResult,
         dir_out: Dict[str, Any],
-        roi_manager: ROIManager,
+        roi_manager: Any,
         fps: float,
     ) -> None:
         """Applica tutti i layer di debug sul frame (in-place)."""

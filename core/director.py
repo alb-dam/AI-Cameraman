@@ -11,10 +11,11 @@ Input richiesti: frame, action_center, player_spread.
 """
 
 import numpy as np
-import logging
 from typing import Tuple, Dict, Any, Optional
 
-logger = logging.getLogger(__name__)
+from app.logger import get_logger
+
+logger = get_logger(__name__)
 
 
 # ── 1. Gestione Zoom ────────────────────────────────────────────────────
@@ -23,7 +24,6 @@ logger = logging.getLogger(__name__)
 class ZoomManager:
     """Calcola il livello di zoom combinando componente fissa e dinamica."""
 
-    # Soglie dispersione giocatori (pixel)
     _MAX_SPREAD = 1500.0   # spread massimo → nessun bonus dinamico
     _DYNAMIC_SCALE = 0.5   # moltiplicatore massimo del bonus dinamico
 
@@ -34,20 +34,12 @@ class ZoomManager:
         self._zoom_smoothing: float = 0.10   # fattore smoothing zoom
 
     def set_config(self, fixed_zoom_percent: float, dynamic_zoom_percent: float) -> None:
-        """Traduce le percentuali UI (0-100) in valori interni.
-
-        fixed_zoom_percent:   0-100 → 1.0x–3.0x
-        dynamic_zoom_percent: 0-100 → intensità 0.0–1.0
-        """
+        """Traduce le percentuali UI (0-100) in valori interni."""
         self.fixed_zoom = 1.0 + (fixed_zoom_percent / 50.0)
         self.dynamic_intensity = dynamic_zoom_percent / 100.0
 
     def compute_target_zoom(self, player_spread: float) -> float:
-        """Calcola lo zoom target (fisso + bonus dinamico).
-
-        - spread piccolo → giocatori vicini → più zoom (stringe)
-        - spread grande → giocatori dispersi  → meno zoom (allarga)
-        """
+        """Calcola lo zoom target (fisso + bonus dinamico)."""
         if self.dynamic_intensity == 0.0 or player_spread < 0:
             return self.fixed_zoom
 
@@ -119,7 +111,6 @@ class CropCalculator:
         x2 = min(frame_w, x1 + crop_w)
         y2 = min(frame_h, y1 + crop_h)
 
-        # Correzione sforo: se picchiamo sul bordo destro/basso, spingi indietro x1/y1
         if x2 - x1 < crop_w:
             x1 = max(0, x2 - crop_w)
         if y2 - y1 < crop_h:
@@ -132,15 +123,9 @@ class CropCalculator:
 
 
 class Director:
-    """Regia virtuale: compone ZoomManager, PanTiltController e CropCalculator.
-
-    API pubblica:
-        set_config(fixed_zoom_percent, dynamic_zoom_percent)
-        process(frame, action_center, player_spread) -> Dict
-    """
+    """Regia virtuale: compone ZoomManager, PanTiltController e CropCalculator."""
 
     def __init__(self) -> None:
-        """Inizializza i tre sotto-moduli interni."""
         self.zoom_manager = ZoomManager()
         self.pan_tilt = PanTiltController()
         self.crop_calc = CropCalculator()
@@ -154,24 +139,12 @@ class Director:
         action_center: Tuple[int, int],
         player_spread: float
     ) -> Dict[str, Any]:
-        """Esegue la regia sul frame corrente.
-
-        Args:
-            frame:          frame originale (non modificato da ROI)
-            action_center:  centro d'azione calcolato dal Detector
-            player_spread:  max spread bounding box giocatori (pixel)
-
-        Returns:
-            Dict con cropped_frame, crop_box, zoom_level, smoothed_center.
-        """
-        # 1. Pan / Tilt
+        """Esegue la regia sul frame corrente."""
         smoothed = self.pan_tilt.compute_offset(action_center)
 
-        # 2. Zoom
         target_zoom = self.zoom_manager.compute_target_zoom(player_spread)
         current_zoom = self.zoom_manager.smooth_transition(target_zoom)
 
-        # 3. Crop
         h, w = frame.shape[:2]
         center_int = (int(smoothed[0]), int(smoothed[1]))
         crop_box = self.crop_calc.calculate_crop_region(center_int, current_zoom, w, h)
