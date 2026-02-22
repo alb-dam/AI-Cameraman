@@ -107,7 +107,7 @@ class YoloDetector:
             elif os.path.exists(model_path):
                 logger.info(f"Modello Ottimizzato non trovato. Esportazione automatica in CoreML per {model_path} in corso, attendere...")
                 try:
-                    temp_model = YOLO(model_path)
+                    temp_model = YOLO(model_path, task='detect')
                     temp_model.export(format="coreml", nms=True)
                     if os.path.exists(mlpackage_path):
                         optimized_path = mlpackage_path
@@ -126,7 +126,7 @@ class YoloDetector:
             elif os.path.exists(model_path):
                 logger.info(f"Modello Ottimizzato non trovato. Esportazione automatica in ONNX per {model_path} in corso, attendere...")
                 try:
-                    temp_model = YOLO(model_path)
+                    temp_model = YOLO(model_path, task='detect')
                     temp_model.export(format="onnx", opset=12, half=self.use_half, device=self.device)
                     if os.path.exists(onnx_path):
                         optimized_path = onnx_path
@@ -135,7 +135,7 @@ class YoloDetector:
                     logger.error(f"Errore durante esportazione automatica: {e}")
                 
         try:
-            model = YOLO(optimized_path)
+            model = YOLO(optimized_path, task='detect')
             if optimized_path.endswith('.pt') and self.device != "cpu":
                 try:
                     model.to(self.device)
