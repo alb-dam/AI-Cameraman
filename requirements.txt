@@ -1,8 +1,9 @@
---extra-index-url https://download.pytorch.org/whl/cu121
+--extra-index-url https://download.pytorch.org/whl/cu128
 
-# Core ML packages (Windows will pull from cu121 index, macOS from PyPI)
-torch>=2.0.0
-torchvision>=0.15.0
+# Core ML packages (Windows will pull from cu128 index, macOS from PyPI) 
+#Thos versions are the lastest for MX150 mobile GPU
+torch==2.7.1
+torchvision==0.22.1 
 ultralytics
 
 # General dependencies
