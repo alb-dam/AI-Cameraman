@@ -14,7 +14,7 @@ from PySide6.QtCore import Signal, QObject
 from PySide6.QtGui import QCloseEvent
 
 from config.settings import SettingsManager
-from app.orchestrator import Orchestrator
+from core.interfaces import IController
 from gui.panels import control_panel_run, preview_panel_run, log_panel_run
 
 
@@ -27,9 +27,9 @@ class UIBridge(QObject):
 class MainWindow(QMainWindow):
     """Orchestratore GUI: compone i pannelli e collega segnali all'Orchestrator."""
 
-    def __init__(self, orchestrator: Orchestrator, settings: SettingsManager) -> None:
+    def __init__(self, controller: IController, settings: SettingsManager) -> None:
         super().__init__()
-        self.orchestrator: Orchestrator = orchestrator
+        self.controller = controller
         self.settings: SettingsManager = settings
         self.bridge = UIBridge()
 
@@ -78,7 +78,7 @@ class MainWindow(QMainWindow):
         self._restore_config_to_ui()
 
         # Avvia auto-preview generale ma non OBS output al lancio
-        self.orchestrator.start_processing()
+        self.controller.start()
 
     def _connect_control_panel_signals(self) -> None:
         cp = self.control_panel
@@ -101,8 +101,8 @@ class MainWindow(QMainWindow):
         self.stop_btn.clicked.connect(self._on_stop)
 
     def _connect_orchestrator_bridge(self) -> None:
-        self.orchestrator.on_frame_ready = self.bridge.frame_signal.emit
-        self.orchestrator.on_log_message = self.bridge.log_signal.emit
+        self.controller.state.on_frame_ready = self.bridge.frame_signal.emit
+        self.controller.state.on_log_message = self.bridge.log_signal.emit
         self.bridge.frame_signal.connect(self._on_frame_received)
         self.bridge.log_signal.connect(self.log_panel.append_message)
 
@@ -132,7 +132,7 @@ class MainWindow(QMainWindow):
         if not is_file:
             self.settings.set("source_path", str(source_path))
 
-        self.orchestrator.start_processing()
+        self.controller.start()
 
     def _on_file_select(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
@@ -142,13 +142,13 @@ class MainWindow(QMainWindow):
             return
         self.settings.set("source_path", file_path)
         self.log_panel.append_message(f"File video selezionato: {file_path}")
-        self.orchestrator.start_processing()
+        self.controller.start()
 
     def _on_debug_toggled(self, checked: bool) -> None:
         self.settings.set("debug_mode", checked)
 
     def _on_start(self) -> None:
-        if self.orchestrator.start_obs_output():
+        if self.controller.start_obs_output():
             self.start_btn.setEnabled(False)
             self.stop_btn.setEnabled(True)
         else:
@@ -157,7 +157,7 @@ class MainWindow(QMainWindow):
     def _on_stop(self) -> None:
         self.stop_btn.setEnabled(False)
         self.start_btn.setEnabled(True)
-        self.orchestrator.stop_obs_output()
+        self.controller.stop_obs_output()
 
     def _on_load_roi(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
@@ -165,14 +165,14 @@ class MainWindow(QMainWindow):
         )
         if not file_path:
             return
-        if self.orchestrator.roi_manager.load_roi(file_path):
+        if self.controller.roi_manager.load_roi(file_path):
             self.settings.set("last_roi_path", file_path)
             self.log_panel.append_message(f"ROI caricata: {file_path}")
         else:
             self.log_panel.append_message(f"Errore durante il caricamento della ROI: {file_path}")
 
     def _on_create_roi(self) -> None:
-        self.orchestrator.roi_manager.start_roi_selection()
+        self.controller.roi_manager.start_roi_selection()
         self.preview_panel.set_roi_editing(True)
         self.log_panel.append_message(
             "Modalità editing ROI avviata. Clicca sulla preview per aggiungere punti. "
@@ -185,17 +185,17 @@ class MainWindow(QMainWindow):
         )
         if not file_path:
             return
-        if self.orchestrator.roi_manager.save_roi(file_path):
+        if self.controller.roi_manager.save_roi(file_path):
             self.settings.set("last_roi_path", file_path)
             self.log_panel.append_message(f"ROI salvata: {file_path}")
         else:
             self.log_panel.append_message(f"Errore durante il salvataggio della ROI: {file_path}")
 
     def _on_roi_point_added(self, norm_x: float, norm_y: float) -> None:
-        self.orchestrator.roi_manager.add_point(norm_x, norm_y)
+        self.controller.roi_manager.add_point(norm_x, norm_y)
 
     def _on_roi_finalized(self) -> None:
-        self.orchestrator.roi_manager.finalize_roi()
+        self.controller.roi_manager.finalize_roi()
         self.preview_panel.set_roi_editing(False)
         self.log_panel.append_message("ROI finalizzata.")
 
@@ -203,23 +203,23 @@ class MainWindow(QMainWindow):
         if frame is None:
             return
 
-        if self.orchestrator.roi_manager.editing_mode:
-            self.preview_panel.draw_roi_overlay(frame, self.orchestrator.roi_manager.roi_points)
+        if self.controller.roi_manager.editing_mode:
+            self.preview_panel.draw_roi_overlay(frame, self.controller.roi_manager.roi_points)
 
         self.preview_panel.update_frame(frame)
 
     def closeEvent(self, event: QCloseEvent) -> None:
         self.settings.save()
-        self.orchestrator.close_all()
+        self.controller.close_all()
         super().closeEvent(event)
 
 
-def main_window_run(orchestrator: Orchestrator, settings: SettingsManager) -> None:
+def main_window_run(controller: IController, settings: SettingsManager) -> None:
     """Crea la QApplication, la finestra MainWindow e avvia il loop Qt."""
     app = QApplication.instance()
     if app is None:
         app = QApplication(sys.argv)
         
-    window = MainWindow(orchestrator, settings)
+    window = MainWindow(controller, settings)
     window.show()
     sys.exit(app.exec())

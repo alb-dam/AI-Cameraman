@@ -1,0 +1,115 @@
+"""Protocolli (Interfacce) per Dependency Injection. Definiscono i contratti applicativi."""
+
+from typing import Protocol, Any, Tuple, Optional, Callable, List, Union
+import numpy as np
+
+from config.settings import SettingsManager
+from core.models import DetectionResult, CameraInstruction, FrameMetadata
+
+
+class IPerformanceMonitor(Protocol):
+    def mark_capture(self, frame_id: int) -> None: ...
+    def mark_inference(self, frame_id: int) -> None: ...
+    def mark_render(self, frame_id: int, capture_time: float) -> None: ...
+    def log_stats(self) -> None: ...
+
+
+# ── Video Layer Interfaces ──────────────────────────────────────────────────
+
+class IVideoInput(Protocol):
+    def initialize_source(self, source_type: str, source_value: Union[int, str, None] = None) -> None: ...
+    def get_fps(self) -> float: ...
+    def read_frame(self) -> Tuple[bool, Any]: ...
+    def release(self) -> None: ...
+
+
+class IVideoOutput(Protocol):
+    def initialize_virtual_camera(self, width: int, height: int, fps: int) -> None: ...
+    def send_frame(self, frame: np.ndarray) -> None: ...
+    def show_preview(self, frame: np.ndarray, window_name: str = "Local Preview") -> None: ...
+    def close(self) -> None: ...
+    
+    # Per permettere l'accesso da parte dei controller
+    @property
+    def cam(self) -> Any: ...
+
+    # Aggiunto helper usato per il resize
+    def _resize_and_pad(self, frame: np.ndarray, target_size: Tuple[int, int]) -> np.ndarray: ...
+
+
+# ── Core Layer Interfaces ───────────────────────────────────────────────────
+
+class IDetector(Protocol):
+    def set_config(self, q_std: float, r_std: float, yolo_imgsz: int = 640) -> None: ...
+    def process(self, frame: np.ndarray, predict_only: bool = False) -> DetectionResult: ...
+
+
+class IDirector(Protocol):
+    def set_config(self, fixed_zoom_percent: float, dynamic_zoom_percent: float,
+                   max_spread: float = 1000.0, dynamic_scale: float = 1.0,
+                   zoom_smoothing: float = 0.05, zoom_deadzone: float = 0.1,
+                   pan_tilt_deadzone: float = 25.0, pan_tilt_smoothing: float = 0.03) -> None: ...
+    def process(self, frame: np.ndarray, action_center: Tuple[int, int], player_spread: float) -> CameraInstruction: ...
+
+
+class IOverlay(Protocol):
+    def draw(self, frame: np.ndarray, det_out: DetectionResult, dir_out: CameraInstruction, roi_manager: Any, metadata: FrameMetadata) -> None: ...
+
+
+# ── App Layer Interfaces ────────────────────────────────────────────────────
+
+class IROIManager(Protocol):
+    editing_mode: bool
+    roi_points: List[Tuple[float, float]]
+    
+    def apply_roi(self, frame: np.ndarray) -> np.ndarray: ...
+    def start_roi_selection(self) -> None: ...
+    def add_point(self, norm_x: float, norm_y: float) -> None: ...
+    def finalize_roi(self) -> None: ...
+    def load_roi(self, filepath: str) -> bool: ...
+    def save_roi(self, filepath: str) -> bool: ...
+
+
+class IRuntimeState(Protocol):
+    is_running: bool
+    is_outputting_to_obs: bool
+    source_exhausted: bool
+    input_fps: float
+    output_fps: float
+    current_fps: float
+    obs_width: int
+    obs_height: int
+    frames_processed: int
+    start_time: float
+    yolo_frame_counter: int
+    
+    latest_raw_frame: Optional[np.ndarray]
+    latest_obs_frame: Optional[np.ndarray]
+    latest_debug_frame: Optional[np.ndarray]
+    
+    frame_lock: Any
+    
+    on_frame_ready: Optional[Callable[[np.ndarray], None]]
+    on_log_message: Optional[Callable[[str], None]]
+    
+    def reset_for_start(self, input_fps: float, output_fps: float, obs_width: int, obs_height: int, start_time: float) -> None: ...
+    def log(self, message: str) -> None: ...
+
+
+class IPipeline(Protocol):
+    def run_inference(self, frame: np.ndarray) -> Any: ...
+    def run_tracking_and_directing(self, frame: np.ndarray, det_out: Any, metadata: FrameMetadata) -> Tuple[np.ndarray, np.ndarray]: ...
+
+
+class IController(Protocol):
+    state: IRuntimeState
+    pipeline: IPipeline
+    
+    def start(self) -> None: ...
+    def stop(self) -> None: ...
+    def close_all(self) -> None: ...
+    def start_obs_output(self) -> bool: ...
+    def stop_obs_output(self) -> None: ...
+
+
+

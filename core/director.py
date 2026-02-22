@@ -1,37 +1,154 @@
 """Regia virtuale: pan, tilt, zoom dinamico/fisso e ritaglio.
 
 Architettura interna:
-    ZoomManager        – calcolo zoom fisso + dinamico con smoothing
-    PanTiltController  – smoothing temporale del centro inquadrato
-    CropCalculator     – calcolo e clamping della regione di ritaglio
-    Director           – façade pubblica che compone le tre classi
+    ActionCenterCalculator - calcolo centro d'azione basato su rilevamenti
+    ValueSmoother      – smoothing dello zoom (scalare)
+    PointSmoother      – smoothing temporale del centro inquadrato (2D)
+    CameraStrategy     – calcolo zoom fisso + dinamico
+    Director           – façade pubblica che compone le classi precedenti
 
 Nessuna dipendenza da YOLO o dal modulo detector.
 Input richiesti: frame, action_center, player_spread.
 """
 
 import numpy as np
-from typing import Tuple, Dict, Any, Optional
+from typing import List, Tuple, Optional
 
 from app.logger import get_logger
+from core.models import CameraInstruction, TrackedObject
+from core.geometry import GeometryService
 
 logger = get_logger(__name__)
 
 
-# ── 1. Gestione Zoom ────────────────────────────────────────────────────
+class ActionCenterCalculator:
+    """Calcola il centro d'azione come media ponderata giocatori + pallone."""
+
+    PLAYER_WEIGHT = 1.0
+    BALL_WEIGHT = 3.0
+
+    @classmethod
+    def compute_center(
+        cls,
+        players: List[TrackedObject],
+        ball: Optional[TrackedObject],
+    ) -> Optional[Tuple[int, int]]:
+        """Ritorna il baricentro ponderato dell'azione sul campo. Ritorna None se vuoto."""
+        if not players and not ball:
+            return None
+
+        total_w = 0.0
+        wx, wy = 0.0, 0.0
+
+        for p in players:
+            cx, cy = p.center
+            wx += cx * cls.PLAYER_WEIGHT
+            wy += cy * cls.PLAYER_WEIGHT
+            total_w += cls.PLAYER_WEIGHT
+
+        if ball:
+            bx, by = ball.center
+            wx += bx * cls.BALL_WEIGHT
+            wy += by * cls.BALL_WEIGHT
+            total_w += cls.BALL_WEIGHT
+
+        if total_w > 0:
+            return (int(wx / total_w), int(wy / total_w))
+        return None
 
 
-class ZoomManager:
-    """Calcola il livello di zoom combinando componente fissa e dinamica."""
+class ValueSmoother:
+    """Applica uno smoothing esponenziale a un valore scalare."""
 
-    _MAX_SPREAD = 1500.0   # spread massimo → nessun bonus dinamico
-    _DYNAMIC_SCALE = 0.5   # moltiplicatore massimo del bonus dinamico
+    def __init__(self, smoothing_factor: float = 0.10, initial_value: float = 1.0) -> None:
+        self.smoothing_factor = smoothing_factor
+        self.current_value = initial_value
+
+    def smooth(self, target_value: float) -> float:
+        """Ammorbidisce la transizione verso il valore target."""
+        self.current_value += (target_value - self.current_value) * self.smoothing_factor
+        return self.current_value
+
+
+class PointSmoother:
+    """Applica uno smoothing esponenziale a una coordinata 2D."""
+
+    def __init__(self, smoothing_factor: float = 0.05) -> None:
+        self.smoothing_factor = smoothing_factor
+        self.current_point: Optional[Tuple[float, float]] = None
+
+    def smooth(self, target_point: Tuple[float, float]) -> Tuple[float, float]:
+        """Ammorbidisce la transizione verso il punto target."""
+        current = self.current_point
+        if current is None:
+            self.current_point = target_point
+            return target_point
+
+        cx, cy = current
+        sx = cx + (target_point[0] - cx) * self.smoothing_factor
+        sy = cy + (target_point[1] - cy) * self.smoothing_factor
+        
+        self.current_point = (sx, sy)
+        return (sx, sy)
+
+
+class DeadzoneFilter:
+    """Filtro che ignora spostamenti inferiori a una certa soglia (deadzone) per annullare il micro-jitter."""
+
+    def __init__(self, threshold: float = 20.0) -> None:
+        self.threshold = threshold
+        self.stable_point: Optional[Tuple[float, float]] = None
+
+    def filter(self, target_point: Tuple[float, float]) -> Tuple[float, float]:
+        """Se il punto si muove meno della soglia, ritorna il punto precedente."""
+        stable = self.stable_point
+        if stable is None:
+            self.stable_point = target_point
+            return target_point
+            
+        spx, spy = stable
+        dx = target_point[0] - spx
+        dy = target_point[1] - spy
+        dist = float(np.hypot(dx, dy))
+        
+        if dist < self.threshold:
+            return stable
+            
+        self.stable_point = target_point
+        return target_point
+
+
+class ScalarDeadzoneFilter:
+    """Filtro che ignora variazioni scalari inferiori a una certa soglia (deadzone) per annullare il jitter (es. zoom hunting)."""
+
+    def __init__(self, threshold: float = 0.05) -> None:
+        self.threshold = threshold
+        self.stable_value: Optional[float] = None
+
+    def filter(self, target_value: float) -> float:
+        """Se il valore varia meno della soglia, ritorna il valore precedente."""
+        stable = self.stable_value
+        if stable is None:
+            self.stable_value = target_value
+            return target_value
+            
+        diff = abs(target_value - stable)
+        
+        if diff < self.threshold:
+            return stable
+            
+        self.stable_value = target_value
+        return target_value
+
+
+class CameraStrategy:
+    """Strategia di calcolo dello zoom (fisso vs dinamico) dato uno spread di giocatori."""
 
     def __init__(self) -> None:
         self.fixed_zoom: float = 1.0         # 1.0x = nessun zoom
         self.dynamic_intensity: float = 0.0  # 0.0 = disattivato
-        self.current_zoom: float = 1.0
-        self._zoom_smoothing: float = 0.10   # fattore smoothing zoom
+        self._MAX_SPREAD: float = 1000.0     # spread massimo (più alto = attesa prima di zoomare)
+        self._DYNAMIC_SCALE: float = 1.0     # moltiplicatore massimo del bonus dinamico
 
     def set_config(self, fixed_zoom_percent: float, dynamic_zoom_percent: float) -> None:
         """Traduce le percentuali UI (0-100) in valori interni."""
@@ -39,125 +156,76 @@ class ZoomManager:
         self.dynamic_intensity = dynamic_zoom_percent / 100.0
 
     def compute_target_zoom(self, player_spread: float) -> float:
-        """Calcola lo zoom target (fisso + bonus dinamico)."""
+        """Calcola lo zoom target (fisso + bonus dinamico basato sullo spread)."""
         if self.dynamic_intensity == 0.0 or player_spread < 0:
             return self.fixed_zoom
 
-        spread_norm = np.clip((self._MAX_SPREAD - player_spread) / self._MAX_SPREAD, 0.0, 1.0)
+        spread_norm = float(np.clip((self._MAX_SPREAD - player_spread) / self._MAX_SPREAD, 0.0, 1.0))
         dynamic_bonus = spread_norm * self.dynamic_intensity * self._DYNAMIC_SCALE
-        return self.fixed_zoom + dynamic_bonus
-
-    def smooth_transition(self, target_zoom: float) -> float:
-        """Ammorbidisce la transizione verso il target zoom."""
-        self.current_zoom += (target_zoom - self.current_zoom) * self._zoom_smoothing
-        return self.current_zoom
-
-
-# ── 2. Pan / Tilt ────────────────────────────────────────────────────────
-
-
-class PanTiltController:
-    """Gestisce lo smoothing temporale del centro inquadrato (pan + tilt)."""
-
-    def __init__(self, smoothing_factor: float = 0.05) -> None:
-        self.smoothed_center: Optional[Tuple[float, float]] = None
-        self.smoothing_factor: float = smoothing_factor
-
-    def compute_offset(self, action_center: Tuple[int, int]) -> Tuple[float, float]:
-        """Aggiorna e ritorna il centro smoothato."""
-        target_x, target_y = float(action_center[0]), float(action_center[1])
-
-        if self.smoothed_center is None:
-            result = (target_x, target_y)
-        else:
-            sx = self.smoothed_center[0] + (target_x - self.smoothed_center[0]) * self.smoothing_factor
-            sy = self.smoothed_center[1] + (target_y - self.smoothed_center[1]) * self.smoothing_factor
-            result = (sx, sy)
-
-        self.smoothed_center = result
-        return result
-
-
-# ── 3. Calcolo Crop ──────────────────────────────────────────────────────
-
-
-class CropCalculator:
-    """Calcola la regione di ritaglio e clampa ai bordi del frame (stateless)."""
-
-    @staticmethod
-    def calculate_crop_region(
-        center: Tuple[int, int], zoom: float, frame_w: int, frame_h: int
-    ) -> Tuple[int, int, int, int]:
-        """Genera le coordinate di ritaglio (x1, y1, x2, y2)."""
-        crop_w = int(frame_w / zoom)
-        crop_h = int(frame_h / zoom)
-        cx, cy = center
-
-        x1 = cx - crop_w // 2
-        y1 = cy - crop_h // 2
-        x2 = x1 + crop_w
-        y2 = y1 + crop_h
-
-        return CropCalculator.clamp_to_frame(x1, y1, x2, y2, crop_w, crop_h, frame_w, frame_h)
-
-    @staticmethod
-    def clamp_to_frame(
-        x1: int, y1: int, x2: int, y2: int,
-        crop_w: int, crop_h: int, frame_w: int, frame_h: int
-    ) -> Tuple[int, int, int, int]:
-        """Clampa le coordinate ai bordi del frame, preservando la dimensione del crop."""
-        x1 = max(0, x1)
-        y1 = max(0, y1)
-        x2 = min(frame_w, x1 + crop_w)
-        y2 = min(frame_h, y1 + crop_h)
-
-        if x2 - x1 < crop_w:
-            x1 = max(0, x2 - crop_w)
-        if y2 - y1 < crop_h:
-            y1 = max(0, y2 - crop_h)
-
-        return (x1, y1, x2, y2)
-
-
-# ── Façade pubblica ──────────────────────────────────────────────────────
+        return float(self.fixed_zoom + dynamic_bonus)
 
 
 class Director:
-    """Regia virtuale: compone ZoomManager, PanTiltController e CropCalculator."""
+    """Regia virtuale: compone CameraStrategy, filtri di smoothing e GeometryService."""
 
     def __init__(self) -> None:
-        self.zoom_manager = ZoomManager()
-        self.pan_tilt = PanTiltController()
-        self.crop_calc = CropCalculator()
+        self.camera_strategy = CameraStrategy()
+        self.zoom_smoother = ValueSmoother(smoothing_factor=0.05, initial_value=1.0)
+        self.zoom_deadzone = ScalarDeadzoneFilter(threshold=0.1) # 5% di deadzone sullo zoom target
+        self.deadzone_filter = DeadzoneFilter(threshold=25.0)
+        self.pan_tilt_smoother = PointSmoother(smoothing_factor=0.03) # Diminuito per maggiore stabilità
 
-    def set_config(self, fixed_zoom_percent: float, dynamic_zoom_percent: float) -> None:
-        """Imposta le percentuali di zoom dalla UI. Delega a ZoomManager."""
-        self.zoom_manager.set_config(fixed_zoom_percent, dynamic_zoom_percent)
+    def set_config(
+        self, 
+        fixed_zoom_percent: float, 
+        dynamic_zoom_percent: float,
+        max_spread: float = 1000.0,
+        dynamic_scale: float = 1.0,
+        zoom_smoothing: float = 0.05,
+        zoom_deadzone: float = 0.1,
+        pan_tilt_deadzone: float = 25.0,
+        pan_tilt_smoothing: float = 0.03
+    ) -> None:
+        """Imposta i parametri dalla UI e configura filtri e deadzone."""
+        self.camera_strategy.set_config(fixed_zoom_percent, dynamic_zoom_percent)
+        self.camera_strategy._MAX_SPREAD = max_spread
+        self.camera_strategy._DYNAMIC_SCALE = dynamic_scale
+        
+        self.zoom_smoother.smoothing_factor = zoom_smoothing
+        self.zoom_deadzone.threshold = zoom_deadzone
+        self.deadzone_filter.threshold = pan_tilt_deadzone
+        self.pan_tilt_smoother.smoothing_factor = pan_tilt_smoothing
 
     def process(
         self, frame: np.ndarray,
         action_center: Tuple[int, int],
         player_spread: float
-    ) -> Dict[str, Any]:
+    ) -> CameraInstruction:
         """Esegue la regia sul frame corrente."""
-        smoothed = self.pan_tilt.compute_offset(action_center)
+        target_pt = (float(action_center[0]), float(action_center[1]))
+        
+        # 1. Filtro Deadzone per rimuovere il tremolio microscopico
+        stable_target = self.deadzone_filter.filter(target_pt)
+        # 2. Addolcimento per i movimenti più lenti e decisi
+        smoothed = self.pan_tilt_smoother.smooth(stable_target)
 
-        target_zoom = self.zoom_manager.compute_target_zoom(player_spread)
-        current_zoom = self.zoom_manager.smooth_transition(target_zoom)
+        raw_target_zoom = self.camera_strategy.compute_target_zoom(player_spread)
+        stable_target_zoom = self.zoom_deadzone.filter(raw_target_zoom)
+        current_zoom = self.zoom_smoother.smooth(stable_target_zoom)
 
         h, w = frame.shape[:2]
         center_int = (int(smoothed[0]), int(smoothed[1]))
-        crop_box = self.crop_calc.calculate_crop_region(center_int, current_zoom, w, h)
+        crop_box = GeometryService.calculate_crop_region(center_int, current_zoom, w, h)
 
         x1, y1, x2, y2 = crop_box
         cropped_frame = frame[y1:y2, x1:x2]
 
-        return {
-            "cropped_frame": cropped_frame,
-            "crop_box": crop_box,
-            "zoom_level": current_zoom,
-            "smoothed_center": center_int,
-        }
+        return CameraInstruction(
+            cropped_frame=cropped_frame,
+            crop_box=crop_box,
+            zoom_level=current_zoom,
+            smoothed_center=center_int,
+        )
 
 
 def director_run() -> Director:

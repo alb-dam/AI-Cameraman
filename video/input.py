@@ -16,6 +16,8 @@ class VideoInput:
     def __init__(self) -> None:
         """Inizializza la gestione dell'input senza avviare la cattura."""
         self.cap: Optional[cv2.VideoCapture] = None
+        self.current_source_type: Optional[str] = None
+        self.current_source_value: Union[int, str, None] = None
 
     @staticmethod
     def get_available_cameras() -> List[str]:
@@ -25,13 +27,14 @@ class VideoInput:
         if sistema == 'Windows':
             try:
                 from pygrabber.dshow_graph import FilterGraph
-                return FilterGraph().get_input_devices()
+                devices: List[str] = FilterGraph().get_input_devices()  # type: ignore
+                return devices
             except ImportError:
                 logger.warning("Modulo pygrabber non trovato. Fallback a indici numerici base.")
                 return ["Webcam 0", "Webcam 1", "Webcam 2"]
         elif sistema == 'Darwin':
             try:
-                import AVFoundation
+                import AVFoundation  # type: ignore
                 dispositivi = AVFoundation.AVCaptureDevice.devicesWithMediaType_('vide')
                 return [disp.localizedName() for disp in dispositivi]
             except ImportError:
@@ -43,6 +46,8 @@ class VideoInput:
     def initialize_source(self, source_type: str, source_value: Union[int, str, None] = None) -> None:
         """Inizializza la sorgente video (webcam o file)."""
         self.release()
+        self.current_source_type = source_type
+        self.current_source_value = source_value
 
         if source_type == "webcam":
             cam_index = int(source_value) if source_value is not None else 0
@@ -78,6 +83,20 @@ class VideoInput:
         if self.cap is not None:
             self.cap.release()
             self.cap = None
+
+    def reconnect(self) -> bool:
+        """Tentativo di riconnessione all'ultima sorgente configurata."""
+        if self.current_source_type is None:
+            logger.error("Impossibile riconnettere: nessuna sorgente configurata.")
+            return False
+            
+        logger.info(f"Tentativo di riconnessione a {self.current_source_type} ({self.current_source_value})...")
+        try:
+            self.initialize_source(self.current_source_type, self.current_source_value)
+            return True
+        except Exception as e:
+            logger.error(f"Riconnessione fallita: {e}")
+            return False
 
 
 def input_run(source_type: str, source_value: Union[int, str, None] = None) -> VideoInput:

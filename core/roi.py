@@ -1,6 +1,7 @@
-"""Coordinatore ROI: gestisce file, stato di editing e mask engine.
+"""Gestione unificata della Region of Interest (ROI).
 
-Nessuna conoscenza dell'interfaccia grafica o del formato dei frame.
+Combina caricamento/salvataggio file, stato di editing (per la GUI),
+e logica matematica vettoriale per le maschere di ritaglio.
 """
 
 import json
@@ -10,18 +11,24 @@ from typing import List, Tuple, Optional
 import numpy as np
 
 from app.logger import get_logger
-from core.roi_engine import ROIMaskEngine
+from core.geometry import GeometryService
+from core.models import ROI
 
 logger = get_logger(__name__)
 
 
 class ROIManager:
-    """Coordinatore ROI: persistenza, stato di editing, proxy per ROIMaskEngine."""
+    """Coordinatore ROI: persistenza, editing, maschere vettoriali."""
 
     def __init__(self) -> None:
-        self.mask_engine: ROIMaskEngine = ROIMaskEngine()
+        self.roi: ROI = ROI()
         self.roi_points: List[Tuple[float, float]] = []
         self.editing_mode: bool = False
+
+    @property
+    def is_valid(self) -> bool:
+        """True se il poligono ha almeno 3 vertici ed è stato caricato."""
+        return self.roi.is_valid and self.roi.polygon is not None
 
     # ── Persistenza ─────────────────────────────────────────────────────
 
@@ -43,7 +50,7 @@ class ROIManager:
             return False
 
         self.roi_points = [tuple(p) for p in data["points"]]
-        self.mask_engine.set_polygon(self.roi_points)
+        self._update_polygon(self.roi_points)
         logger.info("ROI caricata: %d punti da %s", len(self.roi_points), filepath)
         return True
 
@@ -64,14 +71,22 @@ class ROIManager:
     def create_from_points(self, points: List[Tuple[float, float]]) -> None:
         """Imposta la ROI da una lista e aggiorna il mask engine."""
         self.roi_points = list(points)
-        self.mask_engine.set_polygon(self.roi_points)
+        self._update_polygon(self.roi_points)
+
+    def _update_polygon(self, points: List[Tuple[float, float]]) -> None:
+        """Aggiorna la shape matematica del poligono."""
+        if len(points) >= 3:
+            self.roi.polygon = np.array(points, dtype=np.float32)
+        else:
+            self.roi.polygon = None
+            logger.info("Punti insufficienti per creare un poligono (min 3). ROI disattivata.")
 
     # ── Editing State ───────────────────────────────────────────────────
 
     def start_roi_selection(self) -> None:
         """Reset punti e attiva modalità editing."""
         self.roi_points = []
-        self.mask_engine.clear()
+        self.roi.polygon = None
         self.editing_mode = True
         logger.info("Modalità editing ROI avviata.")
 
@@ -87,18 +102,18 @@ class ROIManager:
         if not self.editing_mode:
             return
         self.editing_mode = False
-        self.mask_engine.set_polygon(self.roi_points)
+        self._update_polygon(self.roi_points)
         logger.info("Modalità editing ROI terminata (%d punti).", len(self.roi_points))
 
-    # ── Proxy verso ROIMaskEngine ───────────────────────────────────────
+    # ── OpenCV Applicazione ed Esposizione ──────────────────────────────
 
     def apply_roi(self, frame: np.ndarray) -> np.ndarray:
         """Applica maschera ROI al frame.
-        Se in modalità editing, restituisce il frame invariato.
+        Se in modalità editing o invalida, restituisce il frame invariato.
         """
-        if self.editing_mode:
+        if self.editing_mode or not self.is_valid:
             return frame
-        return self.mask_engine.apply_mask(frame)
+        return GeometryService.apply_polygon_mask(frame, self.roi.polygon)
 
     def draw_roi(
         self,
@@ -107,9 +122,11 @@ class ROIManager:
         thickness: int = 2,
     ) -> None:
         """Disegna il poligono ROI sul frame (solo se non in editing)."""
-        if self.editing_mode:
+        if self.editing_mode or not self.is_valid:
             return
-        self.mask_engine.draw(frame, color=color, thickness=thickness)
+        GeometryService.draw_polygon(
+            frame, self.roi.polygon, color=color, thickness=thickness
+        )
 
 
 def roi_manager_run(filepath: Optional[str] = None) -> ROIManager:

@@ -1,9 +1,9 @@
 """Gestione dell'output video inclusa virtual camera e preview locale."""
 
 import cv2
-import pyvirtualcam
+import pyvirtualcam  # type: ignore[import-untyped]
 import numpy as np
-from typing import Optional
+from typing import Optional, Tuple
 
 from app.logger import get_logger
 
@@ -39,7 +39,7 @@ class VideoOutput:
             
         self.cam.send(padded)
 
-    def _resize_and_pad(self, frame: np.ndarray, target_size: tuple) -> np.ndarray:
+    def _resize_and_pad(self, frame: np.ndarray, target_size: Tuple[int, int]) -> np.ndarray:
         """Letterbox forzato del frame tramite copyMakeBorder (thread-safe, no Python cache)."""
         h, w = frame.shape[:2]
         tw, th = target_size

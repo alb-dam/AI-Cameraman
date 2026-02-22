@@ -7,14 +7,15 @@ from typing import List, Dict, Any, Tuple, Optional
 import numpy as np
 
 from app.logger import get_logger
+from core.models import Detection
 
 logger = get_logger(__name__)
 
 try:
-    from ultralytics import YOLO
+    from ultralytics import YOLO  # type: ignore
 except ImportError:
     logger.warning("Modulo ultralytics (YOLO) non trovato. AI disabilitata.")
-    YOLO = None
+    YOLO = None  # type: ignore
 
 
 class YoloDetector:
@@ -27,6 +28,7 @@ class YoloDetector:
         self.device, self.use_half = self._detect_device()
         self.model: Any = self._load_model(model_name)
         self.ball_conf_thresh: float = ball_conf_thresh
+        self._inference_counter = 0
 
     @staticmethod
     def _detect_device() -> Tuple[str, bool]:
@@ -46,16 +48,25 @@ class YoloDetector:
         logger.info(f"YOLO configurato per usare device: {device}, precisione half: {use_half}")
         return device, use_half
 
-    def detect(self, frame: np.ndarray, imgsz: int = 640) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
+    def detect(self, frame: np.ndarray, imgsz: int = 640) -> Tuple[List[Detection], Optional[Detection]]:
         """Esegue l'inferenza e ritorna (raw_players, raw_ball)."""
         if self.model is None:
             return [], None
 
-        results = self.model.predict(source=frame, imgsz=imgsz, verbose=False, half=self.use_half,
-                                     device=self.device, classes=[self.PLAYER_CLASS_ID, self.BALL_CLASS_ID])
+        try:
+            results = self.model.predict(source=frame, imgsz=imgsz, verbose=False, half=self.use_half,
+                                         device=self.device, classes=[self.PLAYER_CLASS_ID, self.BALL_CLASS_ID])
+        except Exception as e:
+            self._free_memory()
+            raise e
+        finally:
+            self._inference_counter += 1
+            if self._inference_counter >= 300:
+                self._free_memory()
+                self._inference_counter = 0
 
-        raw_players: List[Dict[str, Any]] = []
-        raw_ball: Optional[Dict[str, Any]] = None
+        raw_players: List[Detection] = []
+        raw_ball: Optional[Detection] = None
 
         img_h, img_w = frame.shape[:2]
         # La palla non dovrebbe mai occupare più del 15% o 20% della dimensione minore dello schermo
@@ -70,22 +81,35 @@ class YoloDetector:
             if cls_id == self.PLAYER_CLASS_ID:
                 raw_players.append(entry)
             elif cls_id == self.BALL_CLASS_ID:
-                if entry["conf"] < self.ball_conf_thresh:
+                if entry.conf < self.ball_conf_thresh:
                     continue
                 
                 # Verifica morfologica
-                w = entry["box"][2] - entry["box"][0]
-                h = entry["box"][3] - entry["box"][1]
+                w = entry.box[2] - entry.box[0]
+                h = entry.box[3] - entry.box[1]
                 aspect_ratio = max(w, h) / max(min(w, h), 1)
                 
                 # Rifiuta box troppo grandi o troppo schiacciati (hallucinazioni)
                 if w > max_ball_dim or h > max_ball_dim or aspect_ratio > 3.0:
                     continue
 
-                if raw_ball is None or entry["conf"] > raw_ball["conf"]:
+                if raw_ball is None or entry.conf > raw_ball.conf:
                     raw_ball = entry
 
         return raw_players, raw_ball
+
+    def _free_memory(self) -> None:
+        """Svuota la cache GPU per prevenire Memory Leaks a lungo termine."""
+        try:
+            import gc
+            gc.collect()
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                torch.mps.empty_cache()
+        except Exception:
+            pass
 
     def _load_model(self, model_path: str) -> Any:
         """Tenta il caricamento del modello YOLO e applica accelerazione hardware."""
@@ -148,10 +172,10 @@ class YoloDetector:
             return None
 
     @staticmethod
-    def _parse_box(box: Any) -> Optional[Tuple[int, Dict[str, Any]]]:
+    def _parse_box(box: Any) -> Optional[Tuple[int, Detection]]:
         """Estrae classe, confidence e coordinate da un singolo box YOLO."""
         cls_id = int(box.cls[0])
         conf = float(box.conf[0])
         x1, y1, x2, y2 = (int(v) for v in box.xyxy[0])
         cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
-        return cls_id, {"box": (x1, y1, x2, y2), "center": (cx, cy), "conf": conf}
+        return cls_id, Detection(box=(x1, y1, x2, y2), center=(cx, cy), conf=conf)

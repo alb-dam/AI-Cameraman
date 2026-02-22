@@ -20,15 +20,16 @@ class AppSettings:
     source_type: str = "webcam"
     source_path: str = ""
     debug_mode: bool = False
+    enable_performance_monitor: bool = False
     
     # Impostazioni Output indipendenti dall'input
     output_width: int = 1280
     output_height: int = 720
     output_fps: int = 30
     
-    fixed_zoom_percent: float = 50.0
+    fixed_zoom_percent: float = 25.0
     dynamic_zoom_percent: float = 50.0
-    kalman_preset_percent: float = 50.0
+    kalman_preset_percent: float = 100.0
     
     kalman_q_smooth: float = 0.01
     kalman_r_smooth: float = 100.0
@@ -38,7 +39,32 @@ class AppSettings:
     last_roi_path: str = "roi.json"
     yolo_model: str = "assets/yolo26n.pt"
     yolo_imgsz: int = 640
-    yolo_inference_interval: int = 3
+    yolo_inference_interval: int = 6
+    
+    # --- Parametri Avanzati Regia ---
+    # Spread massimo dei giocatori prima che il bonus dinamico venga annullato (in pixel).
+    # Valori più alti = la camera attende che i giocatori siano molto più vicini prima di fare zoom in.
+    director_max_spread: float = 1500.0
+    
+    # Moltiplicatore massimo per il bonus di zoom dinamico.
+    # Valori più bassi (es. 0.3) = zoom dinamico più dolce. Valori ad. 1.0 = zoom aggressivo.
+    director_dynamic_scale: float = 1.0
+    
+    # Fattore di addolcimento (smoothing) per i cambi di zoom.
+    # Valori più bassi (es. 0.01) = transizioni di zoom lentissime. Valori verso 1.0 = zoom istantaneo.
+    director_zoom_smoothing: float = 0.01
+    
+    # Tolleranza (deadzone) sui cambi di zoom prima di applicarli. 
+    # 0.1 significa ignorare variazioni inferiori al 10%. Aiuta ad evitare l'effetto "zoom hunting".
+    director_zoom_deadzone: float = 0.1
+    
+    # Deadzone spaziale (in pixel) per il Pan/Tilt. Se il centro dell'azione si muove meno 
+    # di questo valore, la fotocamera non si sposta, eliminando i micro-tremolii (jitter).
+    director_pan_tilt_deadzone: float = 50.0
+    
+    # Fattore di addolcimento (smoothing) direzionale (Pan e Tilt).
+    # Valori più bassi (es. 0.01) = movimenti ampi e cinematografici fluidi, ma lenti a inseguire.
+    director_pan_tilt_smoothing: float = 0.03
 
 
 class SettingsManager:

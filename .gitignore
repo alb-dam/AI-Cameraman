@@ -1,9 +1,25 @@
+# OS generated files
 .DS_Store
+
+# Core files
 *.pt
 *.mp4
 *.json
-/.venv
-/__pycache__
-/*/__pycache__
-/*/*/__pycache__
-/assets/*
+*.zip
+assets/
+
+# Virtual environments
+.venv
+venv/
+env/
+
+# Caches & Logs
+__pycache__/
+.mypy_cache/
+.pytest_cache/
+logs/
+*.log
+
+# Coverage
+.coverage
+htmlcov/

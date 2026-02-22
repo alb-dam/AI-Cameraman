@@ -21,6 +21,20 @@ def setup_logger(level: int = logging.INFO) -> None:
     console_handler.setFormatter(formatter)
     
     root_logger.addHandler(console_handler)
+    
+    # Handler per File (Rotating, max 5MB, 3 backup)
+    try:
+        from logging.handlers import RotatingFileHandler
+        import os
+        os.makedirs("logs", exist_ok=True)
+        file_handler = RotatingFileHandler(
+            "logs/ai_cameraman.log", maxBytes=5 * 1024 * 1024, backupCount=3
+        )
+        file_handler.setFormatter(formatter)
+        root_logger.addHandler(file_handler)
+    except Exception as e:
+        print(f"Attenzione: impossibile inizializzare i log su file. {e}")
+
     root_logger.setLevel(level)
     
     # Riduciamo la verbosità di alcune librerie esterne rumorose se ci fossero
