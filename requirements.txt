@@ -1,8 +1,17 @@
+--extra-index-url https://download.pytorch.org/whl/cu121
+
+# Core ML packages (Windows will pull from cu121 index, macOS from PyPI)
+torch>=2.0.0
+torchvision>=0.15.0
+ultralytics
+
+# General dependencies
 PySide6
 opencv-python
 numpy
 pyvirtualcam
-ultralytics
+
+# OS-Specific dependencies
 pygrabber; sys_platform == "win32"
 onnx; sys_platform == "win32"
 onnxruntime-gpu; sys_platform == "win32"
