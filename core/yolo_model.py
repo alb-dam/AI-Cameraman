@@ -24,16 +24,35 @@ class YoloDetector:
     BALL_CLASS_ID = 32
 
     def __init__(self, model_name: str = "assets/yolo26n.pt", ball_conf_thresh: float = 0.4) -> None:
+        self.device, self.use_half = self._detect_device()
         self.model: Any = self._load_model(model_name)
         self.ball_conf_thresh: float = ball_conf_thresh
+
+    @staticmethod
+    def _detect_device() -> Tuple[str, bool]:
+        """Detects the best available hardware device and whether to use half precision."""
+        device = "cpu"
+        use_half = False
+        try:
+            import torch
+            if torch.cuda.is_available():
+                device = "cuda:0"
+                use_half = True
+            elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                device = "mps"
+                use_half = True
+        except ImportError:
+            pass
+        logger.info(f"YOLO configurato per usare device: {device}, precisione half: {use_half}")
+        return device, use_half
 
     def detect(self, frame: np.ndarray, imgsz: int = 640) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
         """Esegue l'inferenza e ritorna (raw_players, raw_ball)."""
         if self.model is None:
             return [], None
 
-        results = self.model.predict(source=frame, imgsz=imgsz, verbose=False, half=True,
-                                     classes=[self.PLAYER_CLASS_ID, self.BALL_CLASS_ID])
+        results = self.model.predict(source=frame, imgsz=imgsz, verbose=False, half=self.use_half,
+                                     device=self.device, classes=[self.PLAYER_CLASS_ID, self.BALL_CLASS_ID])
 
         raw_players: List[Dict[str, Any]] = []
         raw_ball: Optional[Dict[str, Any]] = None
@@ -108,7 +127,7 @@ class YoloDetector:
                 logger.info(f"Modello Ottimizzato non trovato. Esportazione automatica in ONNX per {model_path} in corso, attendere...")
                 try:
                     temp_model = YOLO(model_path)
-                    temp_model.export(format="onnx", opset=12)
+                    temp_model.export(format="onnx", opset=12, half=self.use_half, device=self.device)
                     if os.path.exists(onnx_path):
                         optimized_path = onnx_path
                         logger.info(f"Esportazione terminata. ORA Carico {optimized_path}!")
@@ -117,14 +136,12 @@ class YoloDetector:
                 
         try:
             model = YOLO(optimized_path)
-            if sys.platform == "darwin" and optimized_path.endswith('.pt'):
+            if optimized_path.endswith('.pt') and self.device != "cpu":
                 try:
-                    import torch
-                    if torch.backends.mps.is_available():
-                        model.to("mps")
-                        logger.info("Modello caricato su acceleratore hardware MPS.")
-                except ImportError:
-                    pass
+                    model.to(self.device)
+                    logger.info(f"Modello caricato su acceleratore hardware {self.device}.")
+                except Exception as e:
+                    logger.warning(f"Impossibile spostare il modello su {self.device}: {e}")
             return model
         except Exception as e:
             logger.error(f"Errore caricamento modello {optimized_path}: {e}")
