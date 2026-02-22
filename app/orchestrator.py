@@ -32,7 +32,10 @@ class Orchestrator:
         # Moduli funzionali
         self.video_input: VideoInput = VideoInput()
         self.video_output: VideoOutput = VideoOutput()
-        self.detector = detector_run(model_name=self.settings_manager.get("yolo_model"))
+        self.detector = detector_run(
+            model_name=self.settings_manager.get("yolo_model"),
+            yolo_imgsz=self.settings_manager.get("yolo_imgsz")
+        )
         self.director = director_run()
         self.overlay: DebugOverlay = DebugOverlay()
         self.roi_manager: ROIManager = self._load_initial_roi()
@@ -47,6 +50,7 @@ class Orchestrator:
         self.on_log_message: Optional[Callable[[str], None]] = None
 
         self.frames_processed, self.start_time = 0, 0.0
+        self.yolo_frame_counter = 0
         self.current_fps = 0.0
         
         self.input_fps = 30.0
@@ -137,13 +141,17 @@ class Orchestrator:
 
     # ── Controllo OBS ───────────────────────────────────────────────────
 
-    def start_obs_output(self) -> None:
+    def start_obs_output(self) -> bool:
         """Avvia l'invio del flusso video a OBS."""
         if not self.is_running:
             self._log("Errore: impossibile avviare l'elaborazione OBS senza sorgente.")
-            return
+            return False
+        if getattr(self.video_output, "cam", None) is None:
+            self._log("Errore: Virtual Camera non inizializzata. Controllare driver OBS.")
+            return False
         self.is_outputting_to_obs = True
         self._log("Trasmissione verso OBS avviata.")
+        return True
 
     def stop_obs_output(self) -> None:
         """Ferma l'invio del flusso video a OBS."""
@@ -177,7 +185,8 @@ class Orchestrator:
             empty_frames_count = 0
             
             with self.frame_lock:
-                self.latest_raw_frame = frame.copy()
+                # OPT: Rimuoviamo frame.copy() riducendo ~6MB di allocazione scartata per iterazione
+                self.latest_raw_frame = frame
 
             if is_file:
                 sleep_time = frame_duration - (time.time() - loop_start)
@@ -207,7 +216,7 @@ class Orchestrator:
             try:
                 # Scaliamo in proporzione (letterbox) il raw_frame alla risoluzione di target 
                 # PRIMA di passarlo a YOLO, Tracking e Regia per risparmiare moltissime risorse CPU/RAM.
-                working_frame = VideoOutput._resize_and_pad(
+                working_frame = self.video_output._resize_and_pad(
                     raw_frame, (self.obs_width, self.obs_height)
                 )
 
@@ -222,16 +231,26 @@ class Orchestrator:
 
     def _process_frame(self, frame: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         self._apply_config_updates()
+        
+        interval = self.settings_manager.get("yolo_inference_interval")
+        run_full_inference = (self.yolo_frame_counter % interval) == 0
+        self.yolo_frame_counter += 1
 
-        ai_frame = self.roi_manager.apply_roi(frame.copy())
-        det_out = self.detector.process(ai_frame)
+        # Evitiamo frame.copy() qui: cv2.bitwise_and di ROI genera già un nuovo array.
+        ai_frame = self.roi_manager.apply_roi(frame)
+        
+        # Detector process supporta predict_only = non eseguire YOLO, calcola solo le stime Kalman
+        det_out = self.detector.process(ai_frame, predict_only=not run_full_inference)
         dir_out = self.director.process(frame, det_out.action_center, det_out.player_spread)
 
         obs_frame = dir_out.get("cropped_frame", frame)
 
-        debug_frame = frame.copy()
+        # OPT: Alloca la "tela" del debug_frame solo ed esclusivamente se il debug è attivo
         if self.settings_manager.get("debug_mode"):
+            debug_frame = frame.copy()
             self.overlay.draw(debug_frame, det_out, dir_out, self.roi_manager, self.current_fps)
+        else:
+            debug_frame = frame
 
         return obs_frame, debug_frame
 
@@ -270,7 +289,7 @@ class Orchestrator:
         q_std = q_smooth + (q_reactive - q_smooth) * percent
         r_std = r_smooth + (r_reactive - r_smooth) * percent
 
-        self.detector.set_config(q_std, r_std)
+        self.detector.set_config(q_std, r_std, self.settings_manager.get("yolo_imgsz"))
         self.director.set_config(
             self.settings_manager.get("fixed_zoom_percent"),
             self.settings_manager.get("dynamic_zoom_percent")

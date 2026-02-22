@@ -25,36 +25,39 @@ class ROIManager:
 
     # ── Persistenza ─────────────────────────────────────────────────────
 
-    def load_roi(self, filepath: str) -> None:
+    def load_roi(self, filepath: str) -> bool:
         """Carica punti normalizzati da file JSON e aggiorna il mask engine."""
         if not os.path.exists(filepath):
             logger.warning("File ROI non trovato: %s", filepath)
-            return
+            return False
 
         try:
             with open(filepath, "r", encoding="utf-8") as f:
                 data = json.load(f)
         except (json.JSONDecodeError, OSError) as e:
             logger.error("Errore lettura ROI da %s: %s", filepath, e)
-            return
+            return False
 
         if "points" not in data:
             logger.warning("Formato file ROI non valido: manca 'points' in %s", filepath)
-            return
+            return False
 
         self.roi_points = [tuple(p) for p in data["points"]]
         self.mask_engine.set_polygon(self.roi_points)
         logger.info("ROI caricata: %d punti da %s", len(self.roi_points), filepath)
+        return True
 
-    def save_roi(self, filepath: str) -> None:
+    def save_roi(self, filepath: str) -> bool:
         """Salva i punti ROI normalizzati in un file JSON."""
         try:
             data = {"normalized": True, "points": self.roi_points}
             with open(filepath, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=4)
             logger.info("ROI salvata in %s", filepath)
+            return True
         except OSError as e:
             logger.error("Errore salvataggio ROI in %s: %s", filepath, e)
+            return False
 
     # ── Creazione da punti (API diretta) ────────────────────────────────
 

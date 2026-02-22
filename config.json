@@ -1,17 +1,19 @@
 {
     "source_type": "file",
-    "source_path": "/Users/alberto/Documents/Code/taglio.mp4",
+    "source_path": "/Users/alberto/Documents/Code/gtf basket.mp4",
     "debug_mode": true,
     "output_width": 1280,
     "output_height": 720,
     "output_fps": 30,
-    "fixed_zoom_percent": 50.0,
-    "dynamic_zoom_percent": 50.0,
-    "kalman_preset_percent": 50.0,
+    "fixed_zoom_percent": 25.0,
+    "dynamic_zoom_percent": 100.0,
+    "kalman_preset_percent": 100.0,
     "kalman_q_smooth": 0.01,
     "kalman_r_smooth": 100.0,
     "kalman_q_reactive": 100.0,
     "kalman_r_reactive": 0.01,
-    "last_roi_path": "roi.json",
-    "yolo_model": "assets/yolo26n.pt"
+    "last_roi_path": "/Users/alberto/Documents/Code/Antigravity/AI-Cameraman/roi2.json",
+    "yolo_model": "assets/yolo26n.pt",
+    "yolo_imgsz": 640,
+    "yolo_inference_interval": 6
 }

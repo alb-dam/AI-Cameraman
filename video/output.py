@@ -39,22 +39,24 @@ class VideoOutput:
             
         self.cam.send(padded)
 
-    @staticmethod
-    def _resize_and_pad(frame: np.ndarray, target_size: tuple) -> np.ndarray:
-        """Letterbox forzato del frame per matchare aspect ratio target."""
+    def _resize_and_pad(self, frame: np.ndarray, target_size: tuple) -> np.ndarray:
+        """Letterbox forzato del frame tramite copyMakeBorder (thread-safe, no Python cache)."""
         h, w = frame.shape[:2]
         tw, th = target_size
 
         scale = min(tw / w, th / h)
         nw, nh = int(w * scale), int(h * scale)
 
-        resized = cv2.resize(frame, (nw, nh), interpolation=cv2.INTER_AREA)
-        canvas = np.zeros((th, tw, 3), dtype=np.uint8)
-
-        x_offset = (tw - nw) // 2
-        y_offset = (th - nh) // 2
-        canvas[y_offset:y_offset + nh, x_offset:x_offset + nw] = resized
-        return canvas
+        # OPT: INTER_LINEAR è veloce e hardware accelerated
+        resized = cv2.resize(frame, (nw, nh), interpolation=cv2.INTER_LINEAR)
+        
+        top = (th - nh) // 2
+        bottom = th - nh - top
+        left = (tw - nw) // 2
+        right = tw - nw - left
+        
+        # copyMakeBorder è thread-safe e scritto in C, alloca un nuovo buffer senza conflitti
+        return cv2.copyMakeBorder(resized, top, bottom, left, right, cv2.BORDER_CONSTANT, value=[0, 0, 0])
 
     def show_preview(self, frame: np.ndarray, window_name: str = "Local Preview") -> None:
         """Mostra la preview locale tramite finestra cv2 standard."""

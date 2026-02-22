@@ -21,17 +21,20 @@ class SimpleKalman:
         self.Q: np.ndarray = np.eye(4)
         self.R: np.ndarray = np.eye(2)
         self.P: np.ndarray = np.eye(4) * 10.0
+        self.time_since_update: int = 0
 
     def set_config(self, q_std: float, r_std: float) -> None:
         self.Q = np.eye(4) * q_std
         self.R = np.eye(2) * r_std
 
     def predict(self) -> Tuple[float, float]:
+        self.time_since_update += 1
         self.x = np.dot(self.F, self.x)
         self.P = np.dot(np.dot(self.F, self.P), self.F.T) + self.Q
         return float(self.x[0, 0]), float(self.x[1, 0])
 
     def update(self, z_x: float, z_y: float) -> Tuple[float, float]:
+        self.time_since_update = 0
         Z = np.array([[z_x], [z_y]])
         y = Z - np.dot(self.H, self.x)
         S = np.dot(self.H, np.dot(self.P, self.H.T)) + self.R
@@ -65,22 +68,47 @@ class KalmanTracker:
         self,
         raw_players: List[Dict[str, Any]],
         raw_ball: Optional[Dict[str, Any]],
+        predict_only: bool = False
     ) -> Tuple[List[Dict[str, Any]], Optional[Dict[str, Any]]]:
-        filtered_ball = self._update_ball(raw_ball)
-        filtered_players = self._update_players(raw_players)
+        self._predict_all_models()
+        if predict_only:
+            filtered_ball = self._update_ball_predict_only()
+            filtered_players = self._update_players_predict_only()
+        else:
+            filtered_ball = self._update_ball(raw_ball)
+            filtered_players = self._update_players(raw_players)
+            
         return filtered_players, filtered_ball
+
+    def _update_ball_predict_only(self) -> Optional[Dict[str, Any]]:
+        if self.ball_kalman:
+            pred_x, pred_y = self.ball_kalman.x[0, 0], self.ball_kalman.x[1, 0]
+            return {"center": (int(pred_x), int(pred_y)), "raw_box": None}
+        return None
+
+    def _update_players_predict_only(self) -> List[Dict[str, Any]]:
+        filtered: List[Dict[str, Any]] = []
+        for pid, k in self.players_kalman.items():
+            pred_x, pred_y = k.x[0, 0], k.x[1, 0]
+            filtered.append({"id": pid, "center": (int(pred_x), int(pred_y)), "raw_box": None})
+        return filtered
+
+    def _predict_all_models(self) -> None:
+        if self.ball_kalman:
+            self.ball_kalman.predict()
+        for k in self.players_kalman.values():
+            k.predict()
 
     def _update_ball(self, raw_ball: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         if raw_ball:
             cx, cy = raw_ball["center"]
             if self.ball_kalman is None:
                 self.ball_kalman = SimpleKalman(cx, cy, q_std=self.q_std, r_std=self.r_std)
-            self.ball_kalman.predict()
             up_x, up_y = self.ball_kalman.update(cx, cy)
             return {"center": (int(up_x), int(up_y)), "raw_box": raw_ball["box"]}
 
         if self.ball_kalman:
-            pred_x, pred_y = self.ball_kalman.predict()
+            pred_x, pred_y = float(self.ball_kalman.x[0, 0]), float(self.ball_kalman.x[1, 0])
             return {"center": (int(pred_x), int(pred_y)), "raw_box": None}
 
         return None
@@ -104,6 +132,10 @@ class KalmanTracker:
                 filtered.append({"id": self.next_player_id, "center": (cx, cy), "raw_box": rp["box"]})
                 self.next_player_id += 1
 
+        for pid, k in self.players_kalman.items():
+            if k.time_since_update < 30:
+                new_kalman[pid] = k
+
         self.players_kalman = new_kalman
         return filtered
 
@@ -112,7 +144,7 @@ class KalmanTracker:
         best_dist = self.MAX_MATCH_DISTANCE
 
         for pid, k in self.players_kalman.items():
-            kx, ky = k.predict()
+            kx, ky = float(k.x[0, 0]), float(k.x[1, 0])
             dist = float(np.hypot(cx - kx, cy - ky))
             if dist < best_dist:
                 best_id, best_dist = pid, dist

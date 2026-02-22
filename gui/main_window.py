@@ -85,9 +85,9 @@ class MainWindow(QMainWindow):
         cp.source_changed.connect(self._on_source_changed)
         cp.file_requested.connect(self._on_file_select)
         cp.debug_toggled.connect(self._on_debug_toggled)
-        cp.fixed_zoom_changed.connect(lambda v: self.settings.set("fixed_zoom_percent", float(v)))
-        cp.dynamic_zoom_changed.connect(lambda v: self.settings.set("dynamic_zoom_percent", float(v)))
-        cp.kalman_changed.connect(lambda v: self.settings.set("kalman_preset_percent", float(v)))
+        cp.fixed_zoom_changed.connect(lambda v: self.settings.set("fixed_zoom_percent", float(v), save_to_disk=False))
+        cp.dynamic_zoom_changed.connect(lambda v: self.settings.set("dynamic_zoom_percent", float(v), save_to_disk=False))
+        cp.kalman_changed.connect(lambda v: self.settings.set("kalman_preset_percent", float(v), save_to_disk=False))
         cp.load_roi_requested.connect(self._on_load_roi)
         cp.create_roi_requested.connect(self._on_create_roi)
         cp.save_roi_requested.connect(self._on_save_roi)
@@ -148,9 +148,11 @@ class MainWindow(QMainWindow):
         self.settings.set("debug_mode", checked)
 
     def _on_start(self) -> None:
-        self.start_btn.setEnabled(False)
-        self.stop_btn.setEnabled(True)
-        self.orchestrator.start_obs_output()
+        if self.orchestrator.start_obs_output():
+            self.start_btn.setEnabled(False)
+            self.stop_btn.setEnabled(True)
+        else:
+            self.log_panel.append_message("Errore: impossibile avviare OBS (verificare plugin Virtual Camera).")
 
     def _on_stop(self) -> None:
         self.stop_btn.setEnabled(False)
@@ -163,9 +165,11 @@ class MainWindow(QMainWindow):
         )
         if not file_path:
             return
-        self.orchestrator.roi_manager.load_roi(file_path)
-        self.settings.set("last_roi_path", file_path)
-        self.log_panel.append_message(f"ROI caricata: {file_path}")
+        if self.orchestrator.roi_manager.load_roi(file_path):
+            self.settings.set("last_roi_path", file_path)
+            self.log_panel.append_message(f"ROI caricata: {file_path}")
+        else:
+            self.log_panel.append_message(f"Errore durante il caricamento della ROI: {file_path}")
 
     def _on_create_roi(self) -> None:
         self.orchestrator.roi_manager.start_roi_selection()
@@ -181,9 +185,11 @@ class MainWindow(QMainWindow):
         )
         if not file_path:
             return
-        self.orchestrator.roi_manager.save_roi(file_path)
-        self.settings.set("last_roi_path", file_path)
-        self.log_panel.append_message(f"ROI salvata: {file_path}")
+        if self.orchestrator.roi_manager.save_roi(file_path):
+            self.settings.set("last_roi_path", file_path)
+            self.log_panel.append_message(f"ROI salvata: {file_path}")
+        else:
+            self.log_panel.append_message(f"Errore durante il salvataggio della ROI: {file_path}")
 
     def _on_roi_point_added(self, norm_x: float, norm_y: float) -> None:
         self.orchestrator.roi_manager.add_point(norm_x, norm_y)
@@ -203,6 +209,7 @@ class MainWindow(QMainWindow):
         self.preview_panel.update_frame(frame)
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        self.settings.save()
         self.orchestrator.close_all()
         super().closeEvent(event)
 

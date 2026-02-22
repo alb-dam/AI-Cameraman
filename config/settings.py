@@ -22,8 +22,8 @@ class AppSettings:
     debug_mode: bool = False
     
     # Impostazioni Output indipendenti dall'input
-    output_width: int = 1920
-    output_height: int = 1080
+    output_width: int = 1280
+    output_height: int = 720
     output_fps: int = 30
     
     fixed_zoom_percent: float = 50.0
@@ -37,6 +37,8 @@ class AppSettings:
     
     last_roi_path: str = "roi.json"
     yolo_model: str = "assets/yolo26n.pt"
+    yolo_imgsz: int = 640
+    yolo_inference_interval: int = 3
 
 
 class SettingsManager:
@@ -56,8 +58,8 @@ class SettingsManager:
             return None
         return getattr(self.settings, key)
 
-    def set(self, key: str, value: any) -> None:
-        """Imposta un setting ed esegue il salvataggio su disco."""
+    def set(self, key: str, value: any, save_to_disk: bool = True) -> None:
+        """Imposta un setting ed esegue opzionalmente il salvataggio su disco."""
         if not hasattr(self.settings, key):
             raise KeyError(f"Chiave non valida: {key}")
             
@@ -72,7 +74,8 @@ class SettingsManager:
                     raise TypeError(f"{key}: atteso {expected_type}, ricevuto {type(value).__name__}")
                 
                 setattr(self.settings, key, value)
-                self.save()
+                if save_to_disk:
+                    self.save()
                 return
 
     # ── Persistenza ─────────────────────────────────────────────────────
