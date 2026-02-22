@@ -41,30 +41,31 @@ class AppSettings:
     yolo_imgsz: int = 640
     yolo_inference_interval: int = 6
     
-    # --- Parametri Avanzati Regia ---
-    # Spread massimo dei giocatori prima che il bonus dinamico venga annullato (in pixel).
-    # Valori più alti = la camera attende che i giocatori siano molto più vicini prima di fare zoom in.
-    director_max_spread: float = 1500.0
+    # Spread massimo dei giocatori prima che il bonus dinamico venga annullato (espresso in percentuale 0-1 basata sulla diagonale del frame).
+    # Valori più alti (es. 0.8) = la camera attende che i giocatori siano molto più lontani prima di fare zoom out.
+    director_max_spread: float = 1.0
     
     # Moltiplicatore massimo per il bonus di zoom dinamico.
-    # Valori più bassi (es. 0.3) = zoom dinamico più dolce. Valori ad. 1.0 = zoom aggressivo.
-    director_dynamic_scale: float = 1.0
+    # Valori più bassi (es. 0.3) = zoom dinamico più dolce. Valori ad. 1.0 = zoom aggressivo. (Due corrisponde ad un 3x)
+    director_dynamic_scale: float = 1.5
     
     # Fattore di addolcimento (smoothing) per i cambi di zoom.
     # Valori più bassi (es. 0.01) = transizioni di zoom lentissime. Valori verso 1.0 = zoom istantaneo.
-    director_zoom_smoothing: float = 0.01
+    director_zoom_smoothing: float = 0.1
     
     # Tolleranza (deadzone) sui cambi di zoom prima di applicarli. 
     # 0.1 significa ignorare variazioni inferiori al 10%. Aiuta ad evitare l'effetto "zoom hunting".
-    director_zoom_deadzone: float = 0.1
+    director_zoom_deadzone: float = 0.2
     
-    # Deadzone spaziale (in pixel) per il Pan/Tilt. Se il centro dell'azione si muove meno 
-    # di questo valore, la fotocamera non si sposta, eliminando i micro-tremolii (jitter).
-    director_pan_tilt_deadzone: float = 50.0
+    # Deadzone spaziale (in percentuale) per il Pan/Tilt. Questo è il valore *base* applicato allo zoom 1x.
+    # Man mano che la camera zooma, questa percentuale viene dinamicamente ridotta per reagire ai
+    # micro-movimenti in modo più preciso senza generare salti bruschi.
+    director_pan_tilt_deadzone: float = 0.2
     
-    # Fattore di addolcimento (smoothing) direzionale (Pan e Tilt).
-    # Valori più bassi (es. 0.01) = movimenti ampi e cinematografici fluidi, ma lenti a inseguire.
-    director_pan_tilt_smoothing: float = 0.03
+    # Fattore di addolcimento (smoothing) direzionale (Pan e Tilt). Questo è il valore *base* allo zoom 1x.
+    # Quando la camera zooma, lo smoothing viene dinamicamente diminuito (movimenti più lenti e smorzati) 
+    # per evitare l'effetto "mal di mare". Valori base più bassi (es. 0.01) = movimenti ampi e cinematografici.
+    director_pan_tilt_smoothing: float = 0.1
 
 
 class SettingsManager:

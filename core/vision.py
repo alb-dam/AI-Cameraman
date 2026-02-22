@@ -200,7 +200,8 @@ class Detector:
         
         action_center = self.last_action_center if self.last_action_center is not None else frame_center
         
-        current_spread = self._compute_player_spread(filtered_players)
+        
+        current_spread = self._compute_player_spread(filtered_players, w, h)
         if current_spread >= 0.0:
             self.last_player_spread = current_spread
         spread = self.last_player_spread
@@ -215,13 +216,17 @@ class Detector:
         )
 
     @staticmethod
-    def _compute_player_spread(players: List[TrackedObject]) -> float:
-        """Calcola la dimensione massima del bounding box che racchiude tutti i giocatori."""
+    def _compute_player_spread(players: List[TrackedObject], frame_width: int, frame_height: int) -> float:
+        """Calcola la dimensione massima del bounding box che racchiude tutti i giocatori, come percentuale (0-1) della diagonale del frame."""
         if not players:
             return -1.0
         xs = [p.center[0] for p in players]
         ys = [p.center[1] for p in players]
-        return float(max(max(xs) - min(xs), max(ys) - min(ys)))
+        spread_px = float(max(max(xs) - min(xs), max(ys) - min(ys)))
+        reference_length = float(np.hypot(frame_width, frame_height))
+        if reference_length == 0:
+             return 0.0
+        return spread_px / reference_length
 
 
 def detector_run(model_name: str = "assets/yolo26n.pt", yolo_imgsz: int = 640, debug: bool = False) -> Detector:

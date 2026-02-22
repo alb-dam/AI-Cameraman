@@ -38,11 +38,15 @@ class DebugOverlay:
 
     @staticmethod
     def _draw_crop_box(frame: np.ndarray, dir_out: CameraInstruction) -> None:
-        """Disegna il rettangolo di crop e il livello di zoom."""
+        """Disegna il rettangolo di crop, il livello di zoom e il centro camera."""
         cx1, cy1, cx2, cy2 = dir_out.crop_box
         cv2.rectangle(frame, (cx1, cy1), (cx2, cy2), (0, 255, 255), 3)
         cv2.putText(frame, f"ZOOM: {dir_out.zoom_level:.2f}x",
                     (cx1, cy1 - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+        
+        # Disegna il pallino giallo che rappresenta il centro della camera (posizione fluida)
+        if hasattr(dir_out, 'smoothed_center') and dir_out.smoothed_center:
+            cv2.circle(frame, dir_out.smoothed_center, 6, (0, 255, 255), -1)
 
     @staticmethod
     def _draw_action_center(frame: np.ndarray, det_out: DetectionResult) -> None:

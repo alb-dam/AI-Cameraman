@@ -93,14 +93,14 @@ class PointSmoother:
 
 
 class DeadzoneFilter:
-    """Filtro che ignora spostamenti inferiori a una certa soglia (deadzone) per annullare il micro-jitter."""
+    """Filtro che si comporta come un 'guinzaglio' (leash): ignora i micromovimenti all'interno della deadzone, ma segue in modo fluido quando il target esce dalla soglia."""
 
-    def __init__(self, threshold: float = 20.0) -> None:
-        self.threshold = threshold
+    def __init__(self, threshold_pct: float = 0.05) -> None:
+        self.threshold_pct = threshold_pct
         self.stable_point: Optional[Tuple[float, float]] = None
 
-    def filter(self, target_point: Tuple[float, float]) -> Tuple[float, float]:
-        """Se il punto si muove meno della soglia, ritorna il punto precedente."""
+    def filter(self, target_point: Tuple[float, float], reference_length: float) -> Tuple[float, float]:
+        """Se il punto esce dalla soglia, il centro stabile viene 'trascinato' lungo il perimetro della deadzone."""
         stable = self.stable_point
         if stable is None:
             self.stable_point = target_point
@@ -111,22 +111,29 @@ class DeadzoneFilter:
         dy = target_point[1] - spy
         dist = float(np.hypot(dx, dy))
         
-        if dist < self.threshold:
+        threshold_px = self.threshold_pct * reference_length
+        if dist <= threshold_px:
             return stable
             
-        self.stable_point = target_point
-        return target_point
+        # Comportamento "Leash": trasciniamo il punto stabile così che la distanza dal target sia esattamente threshold_px
+        ratio = threshold_px / dist
+        new_spx = target_point[0] - dx * ratio
+        new_spy = target_point[1] - dy * ratio
+        
+        new_point = (new_spx, new_spy)
+        self.stable_point = new_point
+        return new_point
 
 
 class ScalarDeadzoneFilter:
-    """Filtro che ignora variazioni scalari inferiori a una certa soglia (deadzone) per annullare il jitter (es. zoom hunting)."""
+    """Filtro a guinzaglio scalare: annulla lo zoom hunting all'interno della soglia, ma segue dolcemente all'esterno."""
 
     def __init__(self, threshold: float = 0.05) -> None:
         self.threshold = threshold
         self.stable_value: Optional[float] = None
 
     def filter(self, target_value: float) -> float:
-        """Se il valore varia meno della soglia, ritorna il valore precedente."""
+        """Trascina il valore stabile mantenendo una distanza massima pari alla soglia."""
         stable = self.stable_value
         if stable is None:
             self.stable_value = target_value
@@ -134,11 +141,16 @@ class ScalarDeadzoneFilter:
             
         diff = abs(target_value - stable)
         
-        if diff < self.threshold:
+        if diff <= self.threshold:
             return stable
             
-        self.stable_value = target_value
-        return target_value
+        if target_value > stable:
+            new_val = target_value - self.threshold
+        else:
+            new_val = target_value + self.threshold
+            
+        self.stable_value = new_val
+        return new_val
 
 
 class CameraStrategy:
@@ -172,8 +184,12 @@ class Director:
         self.camera_strategy = CameraStrategy()
         self.zoom_smoother = ValueSmoother(smoothing_factor=0.05, initial_value=1.0)
         self.zoom_deadzone = ScalarDeadzoneFilter(threshold=0.1) # 5% di deadzone sullo zoom target
-        self.deadzone_filter = DeadzoneFilter(threshold=25.0)
-        self.pan_tilt_smoother = PointSmoother(smoothing_factor=0.03) # Diminuito per maggiore stabilità
+        
+        self.base_pan_tilt_deadzone: float = 0.05
+        self.base_pan_tilt_smoothing: float = 0.03
+        
+        self.deadzone_filter = DeadzoneFilter(threshold_pct=self.base_pan_tilt_deadzone)
+        self.pan_tilt_smoother = PointSmoother(smoothing_factor=self.base_pan_tilt_smoothing) # Diminuito per maggiore stabilità
 
     def set_config(
         self, 
@@ -183,7 +199,7 @@ class Director:
         dynamic_scale: float = 1.0,
         zoom_smoothing: float = 0.05,
         zoom_deadzone: float = 0.1,
-        pan_tilt_deadzone: float = 25.0,
+        pan_tilt_deadzone: float = 0.05,
         pan_tilt_smoothing: float = 0.03
     ) -> None:
         """Imposta i parametri dalla UI e configura filtri e deadzone."""
@@ -193,8 +209,13 @@ class Director:
         
         self.zoom_smoother.smoothing_factor = zoom_smoothing
         self.zoom_deadzone.threshold = zoom_deadzone
-        self.deadzone_filter.threshold = pan_tilt_deadzone
-        self.pan_tilt_smoother.smoothing_factor = pan_tilt_smoothing
+        
+        self.base_pan_tilt_deadzone = pan_tilt_deadzone
+        self.base_pan_tilt_smoothing = pan_tilt_smoothing
+        
+        # Le applichiamo come default iniziale
+        self.deadzone_filter.threshold_pct = self.base_pan_tilt_deadzone
+        self.pan_tilt_smoother.smoothing_factor = self.base_pan_tilt_smoothing
 
     def process(
         self, frame: np.ndarray,
@@ -203,15 +224,26 @@ class Director:
     ) -> CameraInstruction:
         """Esegue la regia sul frame corrente."""
         target_pt = (float(action_center[0]), float(action_center[1]))
-        
-        # 1. Filtro Deadzone per rimuovere il tremolio microscopico
-        stable_target = self.deadzone_filter.filter(target_pt)
-        # 2. Addolcimento per i movimenti più lenti e decisi
-        smoothed = self.pan_tilt_smoother.smooth(stable_target)
+        h, w = frame.shape[:2]
+        reference_length = float(np.hypot(w, h))
 
+        # 1. Calcolo dello zoom attuale
         raw_target_zoom = self.camera_strategy.compute_target_zoom(player_spread)
         stable_target_zoom = self.zoom_deadzone.filter(raw_target_zoom)
         current_zoom = self.zoom_smoother.smooth(stable_target_zoom)
+        
+        # 2. Modulazione dinamica della sensibilità di Pan/Tilt in base allo zoom
+        # Più zoom = movimenti più lenti e deadzone più ridotta (per reagire in fretta ma dolcemente)
+        dynamic_pan_smoothing = self.base_pan_tilt_smoothing / current_zoom
+        dynamic_pan_deadzone = self.base_pan_tilt_deadzone / current_zoom
+        
+        self.pan_tilt_smoother.smoothing_factor = dynamic_pan_smoothing
+        self.deadzone_filter.threshold_pct = dynamic_pan_deadzone
+        
+        # 3. Filtro Deadzone per rimuovere il tremolio microscopico
+        stable_target = self.deadzone_filter.filter(target_pt, reference_length)
+        # 4. Addolcimento per i movimenti più lenti e decisi
+        smoothed = self.pan_tilt_smoother.smooth(stable_target)
 
         h, w = frame.shape[:2]
         center_int = (int(smoothed[0]), int(smoothed[1]))
