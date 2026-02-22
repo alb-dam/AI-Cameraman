@@ -25,7 +25,7 @@ class ActionCenterCalculator:
     """Calcola il centro d'azione come media ponderata giocatori + pallone."""
 
     PLAYER_WEIGHT = 1.0
-    BALL_WEIGHT = 3.0
+    BALL_WEIGHT = 0.0
 
     @classmethod
     def compute_center(
