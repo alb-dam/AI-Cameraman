@@ -104,7 +104,7 @@ class YoloDetector:
             if os.path.exists(mlpackage_path):
                 optimized_path = mlpackage_path
                 logger.info(f"Trovato modello CoreML per macOS: {optimized_path}")
-            elif os.path.exists(model_path):
+            else:
                 logger.info(f"Modello Ottimizzato non trovato. Esportazione automatica in CoreML per {model_path} in corso, attendere...")
                 try:
                     temp_model = YOLO(model_path, task='detect')
@@ -123,7 +123,7 @@ class YoloDetector:
             elif os.path.exists(engine_path):
                 optimized_path = engine_path
                 logger.info(f"Trovato modello TensorRT per PC: {optimized_path}")
-            elif os.path.exists(model_path):
+            else:
                 logger.info(f"Modello Ottimizzato non trovato. Esportazione automatica in ONNX per {model_path} in corso, attendere...")
                 try:
                     temp_model = YOLO(model_path, task='detect')
