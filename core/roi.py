@@ -24,6 +24,8 @@ class ROIManager:
         self.roi: ROI = ROI()
         self.roi_points: List[Tuple[float, float]] = []
         self.editing_mode: bool = False
+        self._cached_mask: Optional[np.ndarray] = None
+        self._cached_mask_size: Optional[Tuple[int, int]] = None  # (w, h)
 
     @property
     def is_valid(self) -> bool:
@@ -74,7 +76,9 @@ class ROIManager:
         self._update_polygon(self.roi_points)
 
     def _update_polygon(self, points: List[Tuple[float, float]]) -> None:
-        """Aggiorna la shape matematica del poligono."""
+        """Aggiorna la shape matematica del poligono e invalida la cache della maschera."""
+        self._cached_mask = None
+        self._cached_mask_size = None
         if len(points) >= 3:
             self.roi.polygon = np.array(points, dtype=np.float32)
         else:
@@ -108,12 +112,22 @@ class ROIManager:
     # ── OpenCV Applicazione ed Esposizione ──────────────────────────────
 
     def apply_roi(self, frame: np.ndarray) -> np.ndarray:
-        """Applica maschera ROI al frame.
+        """Applica maschera ROI al frame con cache (zero-alloc dopo il primo frame).
         Se in modalità editing o invalida, restituisce il frame invariato.
         """
         if self.editing_mode or not self.is_valid:
             return frame
-        return GeometryService.apply_polygon_mask(frame, self.roi.polygon)
+        
+        h, w = frame.shape[:2]
+        current_size = (w, h)
+        
+        # Ricostruisci la cache solo se la dimensione del frame è cambiata o la cache è vuota
+        if self._cached_mask is None or self._cached_mask_size != current_size:
+            self._cached_mask = GeometryService.build_polygon_mask(self.roi.polygon, w, h)
+            self._cached_mask_size = current_size
+            logger.debug("ROI mask cache rigenerata per dimensione %dx%d", w, h)
+        
+        return GeometryService.apply_precomputed_mask(frame, self._cached_mask)
 
     def draw_roi(
         self,

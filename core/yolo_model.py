@@ -4,6 +4,7 @@ Riceve un frame e restituisce bounding box grezzi. Non mantiene stato di trackin
 """
 
 from typing import List, Dict, Any, Tuple, Optional
+import threading
 import numpy as np
 
 from app.logger import get_logger
@@ -61,8 +62,8 @@ class YoloDetector:
             raise e
         finally:
             self._inference_counter += 1
-            if self._inference_counter >= 300:
-                self._free_memory()
+            if self._inference_counter >= 1000:
+                self._free_memory_async()
                 self._inference_counter = 0
 
         raw_players: List[Detection] = []
@@ -98,11 +99,16 @@ class YoloDetector:
 
         return raw_players, raw_ball
 
+    def _free_memory_async(self) -> None:
+        """Avvia la pulizia memoria in background per non bloccare il thread di inferenza."""
+        t = threading.Thread(target=self._free_memory, daemon=True)
+        t.start()
+
     def _free_memory(self) -> None:
         """Svuota la cache GPU per prevenire Memory Leaks a lungo termine."""
         try:
             import gc
-            gc.collect()
+            gc.collect(0)  # Solo generazione 0 — incrementale, ~1ms vs ~5-50ms
             import torch
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()

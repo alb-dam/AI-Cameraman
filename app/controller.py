@@ -185,8 +185,8 @@ class ApplicationController:
 
         self._empty_frames_count = 0
         
-        with self.state.frame_lock:
-            self.state.latest_raw_frame = frame
+        # GIL rende gli assegnamenti di reference atomici — no lock needed
+        self.state.latest_raw_frame = frame
             
         self._capture_frame_id += 1
         frame_id = self._capture_frame_id
@@ -205,14 +205,13 @@ class ApplicationController:
             time.sleep(0.001)
 
     def _inference_loop(self) -> None:
-        """Thread 2: Pre-processing e Inference YOLO (Queue 1 -> Queue 2)."""
-        # Fetch from capture, blocking with timeout to allow graceful shutdown
+        """Thread 2: Resize + Inference YOLO (Queue 1 -> Queue 2)."""
         raw_frame, frame_id, capture_time = self.q_capture_to_inference.get(timeout=0.1)
         
         try:
             self.perf_monitor.mark_inference(frame_id)
             
-            # Resize a risoluzione OBS prima dell'inferenza affinché le coordinate 
+            # Resize a risoluzione OBS affinché le coordinate
             # calcolate da YOLO combacino con quelle della Regia.
             working_frame = self.video_output._resize_and_pad(
                 raw_frame, (self.state.obs_width, self.state.obs_height)
@@ -228,7 +227,6 @@ class ApplicationController:
         working_frame, det_out, frame_id, capture_time = self.q_inference_to_tracking.get(timeout=0.1)
         
         try:
-            # Metadata pre-population, final frame ID updated later
             metadata = FrameMetadata(
                 frame_id=frame_id,
                 timestamp=capture_time,
@@ -238,9 +236,9 @@ class ApplicationController:
 
             obs_frame, debug_frame = self.pipeline.run_tracking_and_directing(working_frame, det_out, metadata)
             
-            with self.state.frame_lock:
-                self.state.latest_obs_frame = obs_frame
-                self.state.latest_debug_frame = debug_frame
+            # GIL rende gli assegnamenti di reference atomici — no lock needed
+            self.state.latest_obs_frame = obs_frame
+            self.state.latest_debug_frame = debug_frame
                 
             self.q_tracking_to_render.put((obs_frame, debug_frame, metadata))
         except Exception as e:
@@ -255,11 +253,11 @@ class ApplicationController:
         
         self.perf_monitor.mark_render(metadata.frame_id, metadata.timestamp)
         
-        if self.state.on_frame_ready:
-            self.state.on_frame_ready(debug_frame)
-
         if self.state.is_outputting_to_obs:
             self.video_output.send_frame(obs_frame)
+            # Skip GUI preview refresh to optimize performance
+        elif self.state.on_frame_ready:
+            self.state.on_frame_ready(debug_frame)
 
         self._update_fps()
 

@@ -43,8 +43,22 @@ class GeometryService:
         return (x1, y1, x2, y2)
 
     @staticmethod
+    def build_polygon_mask(polygon: np.ndarray, width: int, height: int) -> np.ndarray:
+        """Pre-calcola la maschera ROI una volta sola. Ritorna un array uint8 h×w."""
+        abs_points = (polygon * [width, height]).astype(np.int32)
+        mask = np.zeros((height, width), dtype=np.uint8)
+        cv2.fillPoly(mask, [abs_points], 255)
+        return mask
+
+    @staticmethod
+    def apply_precomputed_mask(frame: np.ndarray, mask: np.ndarray) -> np.ndarray:
+        """Applica una maschera pre-calcolata al frame (zero-alloc)."""
+        return cv2.bitwise_and(frame, frame, mask=mask)
+
+    @staticmethod
     def apply_polygon_mask(frame: np.ndarray, polygon: Optional[np.ndarray]) -> np.ndarray:
-        """Applica maschera nera fuori dal poligono. Ritorna il frame invariato se il poligono è nullo."""
+        """Applica maschera nera fuori dal poligono. Ritorna il frame invariato se il poligono è nullo.
+        NOTA: Questo metodo alloca ogni volta. Preferire build_polygon_mask + apply_precomputed_mask."""
         if polygon is None:
             return frame
 

@@ -37,7 +37,7 @@ class AppSettings:
     kalman_r_reactive: float = 0.01
     
     last_roi_path: str = "roi.json"
-    yolo_model: str = "assets/yolo26n.pt"
+    yolo_model: str = "assets/yolo26s.pt"
     yolo_imgsz: int = 640
     yolo_inference_interval: int = 6
     
@@ -74,6 +74,7 @@ class SettingsManager:
     def __init__(self, config_file: str = "config.json") -> None:
         self.config_file: str = config_file
         self.settings: AppSettings = AppSettings()
+        self._config_version: int = 0  # Incrementato ad ogni set() per dirty-flag
         self.load()
 
     # ── Lettura / Scrittura ─────────────────────────────────────────────
@@ -101,6 +102,7 @@ class SettingsManager:
                     raise TypeError(f"{key}: atteso {expected_type}, ricevuto {type(value).__name__}")
                 
                 setattr(self.settings, key, value)
+                self._config_version += 1
                 if save_to_disk:
                     self.save()
                 return

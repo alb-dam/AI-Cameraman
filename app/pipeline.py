@@ -27,10 +27,14 @@ class FramePipeline:
         self.detector = detector
         self.director = director
         self.overlay = overlay
+        
+        # Dirty flags per evitare di ri-applicare config ad ogni frame
+        self._last_detector_config_version: int = -1
+        self._last_director_config_version: int = -1
 
     def run_inference(self, frame: np.ndarray) -> Any:
         """Esegue YOLO (o skip pass) e ritorna det_out."""
-        self._apply_detector_config()
+        self._maybe_apply_detector_config()
         
         interval = self.settings.get("yolo_inference_interval")
         run_full_inference = (self.state.yolo_frame_counter % interval) == 0
@@ -43,18 +47,35 @@ class FramePipeline:
 
     def run_tracking_and_directing(self, frame: np.ndarray, det_out: Any, metadata: FrameMetadata) -> Tuple[np.ndarray, np.ndarray]:
         """Esegue il tracking (Kalman) e la regia per produrre l'output."""
-        self._apply_director_config()
+        self._maybe_apply_director_config()
         
         dir_out = self.director.process(frame, det_out.action_center, det_out.player_spread)
         obs_frame = dir_out.cropped_frame
 
-        if self.settings.get("debug_mode"):
+        # Skip debug frame generation when outputting to OBS (saves ~1ms frame.copy())
+        if self.settings.get("debug_mode") and not self.state.is_outputting_to_obs:
             debug_frame = frame.copy()
             self.overlay.draw(debug_frame, det_out, dir_out, self.roi_manager, metadata)
         else:
             debug_frame = frame
 
         return obs_frame, debug_frame
+
+    def _maybe_apply_detector_config(self) -> None:
+        """Applica config YOLO/Kalman solo se i settings sono cambiati (dirty flag)."""
+        current_version = getattr(self.settings, '_config_version', 0)
+        if current_version == self._last_detector_config_version:
+            return
+        self._last_detector_config_version = current_version
+        self._apply_detector_config()
+
+    def _maybe_apply_director_config(self) -> None:
+        """Applica config regia solo se i settings sono cambiati (dirty flag)."""
+        current_version = getattr(self.settings, '_config_version', 0)
+        if current_version == self._last_director_config_version:
+            return
+        self._last_director_config_version = current_version
+        self._apply_director_config()
 
     def _apply_detector_config(self) -> None:
         """Applica gli aggiornamenti dinamici in tempo reale per YOLO/Kalman dai settings."""

@@ -151,6 +151,7 @@ class MainWindow(QMainWindow):
         if self.controller.start_obs_output():
             self.start_btn.setEnabled(False)
             self.stop_btn.setEnabled(True)
+            self.log_panel.append_message("Trasmissione OBS avviata. Preview messa in pausa per ottimizzare le performance.")
         else:
             self.log_panel.append_message("Errore: impossibile avviare OBS (verificare plugin Virtual Camera).")
 
