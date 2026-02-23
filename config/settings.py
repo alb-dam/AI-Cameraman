@@ -9,6 +9,7 @@ import logging
 import os
 import tempfile
 from dataclasses import dataclass, asdict, fields
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,10 @@ class AppSettings:
     kalman_r_reactive: float = 0.01
     
     last_roi_path: str = "roi.json"
+    
+    # Nomi delle sorgenti NDI
+    ndi_ai_name: str = "AI-Cameraman AI"
+    ndi_native_name: str = "AI-Cameraman Native"
     yolo_model: str = "assets/yolo26s.pt"
     yolo_imgsz: int = 640
     yolo_inference_interval: int = 6
@@ -75,37 +80,38 @@ class SettingsManager:
         self.config_file: str = config_file
         self.settings: AppSettings = AppSettings()
         self._config_version: int = 0  # Incrementato ad ogni set() per dirty-flag
+        # Lookup precompilato {nome: tipo} per O(1) nel metodo set()
+        self._field_types: dict = {f.name: f.type for f in fields(AppSettings)}
         self.load()
 
     # ── Lettura / Scrittura ─────────────────────────────────────────────
 
+    def get_version(self) -> int:
+        """Ritorna la versione corrente della configurazione (dirty-flag pubblico)."""
+        return self._config_version
+
     def get(self, key: str) -> any:
         """Restituisce il valore del setting richiesto."""
         if not hasattr(self.settings, key):
-            logger.warning("get() chiave sconosciuta: %s", key)
-            return None
+            raise KeyError(f"Chiave non valida: {key}")
         return getattr(self.settings, key)
 
     def set(self, key: str, value: any, save_to_disk: bool = True) -> None:
         """Imposta un setting ed esegue opzionalmente il salvataggio su disco."""
-        if not hasattr(self.settings, key):
+        if key not in self._field_types:
             raise KeyError(f"Chiave non valida: {key}")
-            
-        # Trova il campo per verificare il tipo
-        for field in fields(self.settings):
-            if field.name == key:
-                expected_type = field.type
-                # Float accetta anche int, quindi un po' di dinamicità
-                if expected_type == float and isinstance(value, int):
-                    value = float(value)
-                elif not isinstance(value, expected_type):
-                    raise TypeError(f"{key}: atteso {expected_type}, ricevuto {type(value).__name__}")
-                
-                setattr(self.settings, key, value)
-                self._config_version += 1
-                if save_to_disk:
-                    self.save()
-                return
+
+        expected_type = self._field_types[key]
+        # Float accetta anche int
+        if expected_type == float and isinstance(value, int):
+            value = float(value)
+        elif not isinstance(value, expected_type):
+            raise TypeError(f"{key}: atteso {expected_type}, ricevuto {type(value).__name__}")
+
+        setattr(self.settings, key, value)
+        self._config_version += 1
+        if save_to_disk:
+            self.save()
 
     # ── Persistenza ─────────────────────────────────────────────────────
 
@@ -148,6 +154,7 @@ class SettingsManager:
     def save(self) -> None:
         """Salvataggio atomico per non corrompere il JSON in caso di crash."""
         dir_name = os.path.dirname(os.path.abspath(self.config_file))
+        tmp_path: Optional[str] = None
         try:
             fd, tmp_path = tempfile.mkstemp(dir=dir_name, suffix=".tmp")
             with os.fdopen(fd, "w", encoding="utf-8") as f:
@@ -155,14 +162,14 @@ class SettingsManager:
             os.replace(tmp_path, self.config_file)
         except OSError as e:
             logger.error("Errore salvataggio config: %s", e)
-            if os.path.exists(tmp_path):
+            if tmp_path and os.path.exists(tmp_path):
                 os.remove(tmp_path)
 
-    def reset(self, key: str = None) -> None:
+    def reset(self, key: Optional[str] = None) -> None:
         """Resetta un singolo valore al default, o tutto se key è None."""
         default_settings = AppSettings()
         if key is not None:
-            if not hasattr(self.settings, key):
+            if key not in self._field_types:
                 raise KeyError(f"Chiave non valida: {key}")
             setattr(self.settings, key, getattr(default_settings, key))
         else:

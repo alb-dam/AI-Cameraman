@@ -4,7 +4,7 @@ from typing import Tuple, Any
 import numpy as np
 
 from config.settings import SettingsManager
-from core.models import FrameMetadata
+from core.models import FrameMetadata, DetectionResult
 from core.interfaces import IRuntimeState, IROIManager, IDetector, IDirector, IOverlay
 
 
@@ -32,7 +32,7 @@ class FramePipeline:
         self._last_detector_config_version: int = -1
         self._last_director_config_version: int = -1
 
-    def run_inference(self, frame: np.ndarray) -> Any:
+    def run_inference(self, frame: np.ndarray) -> DetectionResult:
         """Esegue YOLO (o skip pass) e ritorna det_out."""
         self._maybe_apply_detector_config()
         
@@ -52,18 +52,23 @@ class FramePipeline:
         dir_out = self.director.process(frame, det_out.action_center, det_out.player_spread)
         obs_frame = dir_out.cropped_frame
 
-        # Skip debug frame generation when outputting to OBS (saves ~1ms frame.copy())
-        if self.settings.get("debug_mode") and not self.state.is_outputting_to_obs:
-            debug_frame = frame.copy()
+        # Genera debug frame: overlay su video (se preview attiva) o su sfondo nero (se solo debug)
+        if self.settings.get("debug_mode"):
+            if self.state.is_preview_enabled:
+                debug_frame = frame.copy()
+            else:
+                debug_frame = np.zeros_like(frame)
             self.overlay.draw(debug_frame, det_out, dir_out, self.roi_manager, metadata)
-        else:
+        elif self.state.is_preview_enabled:
             debug_frame = frame
+        else:
+            debug_frame = None
 
         return obs_frame, debug_frame
 
     def _maybe_apply_detector_config(self) -> None:
         """Applica config YOLO/Kalman solo se i settings sono cambiati (dirty flag)."""
-        current_version = getattr(self.settings, '_config_version', 0)
+        current_version = self.settings.get_version()
         if current_version == self._last_detector_config_version:
             return
         self._last_detector_config_version = current_version
@@ -71,7 +76,7 @@ class FramePipeline:
 
     def _maybe_apply_director_config(self) -> None:
         """Applica config regia solo se i settings sono cambiati (dirty flag)."""
-        current_version = getattr(self.settings, '_config_version', 0)
+        current_version = self.settings.get_version()
         if current_version == self._last_director_config_version:
             return
         self._last_director_config_version = current_version

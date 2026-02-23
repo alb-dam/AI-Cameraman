@@ -5,16 +5,14 @@ import logging
 from collections import deque
 from core.interfaces import IPerformanceMonitor
 from config.settings import SettingsManager
-from app.logger import get_logger
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 class PerformanceMonitor(IPerformanceMonitor):
     """Calcola FPS per stage e latenza end-to-end senza bloccare la pipeline."""
 
     def __init__(self, settings: SettingsManager) -> None:
         self.settings = settings
-        self.enabled = bool(self.settings.get("enable_performance_monitor"))
         
         # Buffer per i tempi: usiamo deques con limite fisso per memoria O(1)
         self._max_history = 60
@@ -28,6 +26,10 @@ class PerformanceMonitor(IPerformanceMonitor):
         # Gestione del log periodico
         self._last_log_time = time.time()
         self._log_interval = 2.0  # Log statistics every 2 seconds
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.settings.get("enable_performance_monitor"))
 
     def mark_capture(self, frame_id: int) -> None:
         if not self.enabled: return

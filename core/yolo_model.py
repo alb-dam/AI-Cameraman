@@ -5,12 +5,12 @@ Riceve un frame e restituisce bounding box grezzi. Non mantiene stato di trackin
 
 from typing import List, Dict, Any, Tuple, Optional
 import threading
+import logging
 import numpy as np
 
-from app.logger import get_logger
 from core.models import Detection
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 try:
     from ultralytics import YOLO  # type: ignore
@@ -24,6 +24,9 @@ class YoloDetector:
 
     PLAYER_CLASS_ID = 0
     BALL_CLASS_ID = 32
+    # Soglie morfologiche per il filtraggio del pallone
+    MAX_BALL_SIZE_RATIO: float = 0.20   # La palla non deve superare il 20% del lato minore
+    MAX_BALL_ASPECT_RATIO: float = 3.0  # Aspect ratio massimo accettabile (filtra allucinazioni)
 
     def __init__(self, model_name: str = "assets/yolo26n.pt", ball_conf_thresh: float = 0.4) -> None:
         self.device, self.use_half = self._detect_device()
@@ -86,12 +89,13 @@ class YoloDetector:
                     continue
                 
                 # Verifica morfologica
-                w = entry.box[2] - entry.box[0]
-                h = entry.box[3] - entry.box[1]
-                aspect_ratio = max(w, h) / max(min(w, h), 1)
+                bw = entry.box[2] - entry.box[0]
+                bh = entry.box[3] - entry.box[1]
+                aspect_ratio = max(bw, bh) / max(min(bw, bh), 1)
+                max_ball_dim = min(img_w, img_h) * self.MAX_BALL_SIZE_RATIO
                 
-                # Rifiuta box troppo grandi o troppo schiacciati (hallucinazioni)
-                if w > max_ball_dim or h > max_ball_dim or aspect_ratio > 3.0:
+                # Rifiuta box troppo grandi o troppo schiacciati (allucinazioni)
+                if bw > max_ball_dim or bh > max_ball_dim or aspect_ratio > self.MAX_BALL_ASPECT_RATIO:
                     continue
 
                 if raw_ball is None or entry.conf > raw_ball.conf:

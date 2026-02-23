@@ -10,7 +10,9 @@ class RuntimeState:
 
     def __init__(self) -> None:
         self.is_running: bool = False
-        self.is_outputting_to_obs: bool = False
+        self.is_outputting_ai: bool = False
+        self.is_outputting_native: bool = False
+        self.is_preview_enabled: bool = True
         self.source_exhausted: bool = False
         
         self.frame_lock = threading.Lock()

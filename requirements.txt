@@ -10,7 +10,7 @@ ultralytics
 PySide6
 opencv-python
 numpy
-pyvirtualcam
+cyndilib
 
 # OS-Specific dependencies
 pygrabber; sys_platform == "win32"

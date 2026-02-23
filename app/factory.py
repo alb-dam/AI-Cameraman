@@ -55,11 +55,7 @@ class AppFactory:
         # Video I/O
         video_input = VideoInput()
         video_output = VideoOutput()
-        
-        output_fps = settings.get("output_fps")
-        obs_width = settings.get("output_width")
-        obs_height = settings.get("output_height")
-        video_output.initialize_virtual_camera(obs_width, obs_height, int(output_fps))
+        # I sender NDI verranno inizializzati nel controller.start()
 
         perf_monitor = PerformanceMonitor(settings)
 

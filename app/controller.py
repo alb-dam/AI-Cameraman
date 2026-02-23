@@ -4,11 +4,14 @@ import threading
 import time
 from typing import Optional
 
+import numpy as np
+
 
 from core.models import FrameMetadata
 from core.thread_manager import DropFrameQueue, WorkerThread
 from config.settings import SettingsManager
 from core.interfaces import IRuntimeState, IPipeline, IVideoInput, IVideoOutput, IPerformanceMonitor
+from video.output import VideoOutput
 from app.logger import get_logger
 
 logger = get_logger(__name__)
@@ -76,7 +79,11 @@ class ApplicationController:
         obs_width = self.settings.get("output_width")
         obs_height = self.settings.get("output_height")
 
-        self.video_output.initialize_virtual_camera(obs_width, obs_height, int(output_fps))
+        # Inizializza i sender NDI (AI + Native)
+        ndi_ai_name = self.settings.get("ndi_ai_name")
+        ndi_native_name = self.settings.get("ndi_native_name")
+        self.video_output.initialize_ndi(ndi_ai_name, ndi_native_name,
+                                         obs_width, obs_height, int(output_fps))
 
         self.state.reset_for_start(input_fps, output_fps, obs_width, obs_height, time.time())
         self.stop_event.clear()
@@ -129,21 +136,34 @@ class ApplicationController:
             except Exception as e:
                 self._log(f"Errore durante la chiusura di video_output: {e}")
 
-    def start_obs_output(self) -> bool:
+    def start_ai_output(self) -> bool:
         if not self.state.is_running:
-            self._log("Errore: impossibile avviare l'elaborazione OBS senza sorgente.")
+            self._log("Errore: impossibile avviare NDI AI senza sorgente.")
             return False
-        if getattr(self.video_output, "cam", None) is None:
-            self._log("Errore: Virtual Camera non inizializzata. Controllare driver OBS.")
+        if getattr(self.video_output, "ndi_ai", None) is None:
+            self._log("Errore: NDI AI Sender non inizializzato.")
             return False
             
-        self.state.is_outputting_to_obs = True
-        self._log("Trasmissione verso OBS avviata.")
+        self.state.is_outputting_ai = True
+        self._log("Trasmissione NDI AI avviata.")
         return True
 
-    def stop_obs_output(self) -> None:
-        self.state.is_outputting_to_obs = False
-        self._log("Trasmissione verso OBS fermata.")
+    def stop_ai_output(self) -> None:
+        self.state.is_outputting_ai = False
+        self._log("Trasmissione NDI AI fermata.")
+
+    def start_native_output(self) -> None:
+        if not self.state.is_running:
+            self._log("Errore: impossibile avviare NDI Native senza sorgente.")
+            return
+        self.state.is_outputting_native = True
+        self.video_output.set_native_enabled(True)
+        self._log("Trasmissione NDI Native avviata.")
+
+    def stop_native_output(self) -> None:
+        self.state.is_outputting_native = False
+        self.video_output.set_native_enabled(False)
+        self._log("Trasmissione NDI Native fermata.")
 
     def _log(self, message: str) -> None:
         logger.info(f"[Controller] {message}")
@@ -154,7 +174,7 @@ class ApplicationController:
         self.stop_event.set()
 
     def _capture_loop(self) -> None:
-        """Thread 1: Legge frame, check source, push on Queue 1."""
+        """Thread 1: Legge frame, check source, push on Queue 1. Invia anche il frame nativo via NDI."""
         if self.state.source_exhausted:
             self.stop_event.set()
             return
@@ -165,28 +185,15 @@ class ApplicationController:
         loop_start = time.time()
         ret, frame = self.video_input.read_frame()
         if not ret:
-            self._empty_frames_count += 1
-            if self._empty_frames_count > 30:
-                if is_file:
-                    self._log("Flusso video interrotto (>30 frame vuoti). Fine del file.")
-                    self.state.source_exhausted = True
-                    self.stop_event.set()
-                else:
-                    self._log("Segnale perso (>30 frame vuoti). Tentativo di riconnessione...")
-                    time.sleep(1.0)
-                    if hasattr(self.video_input, 'reconnect') and self.video_input.reconnect():
-                        self._log("Riconnessione avvenuta con successo!")
-                        self._empty_frames_count = 0
-                    else:
-                        self._log("Riconnessione fallita. Nuovo tentativo al prossimo ciclo.")
-                return
-            time.sleep(0.03)
+            self._handle_empty_frame(is_file)
             return
 
         self._empty_frames_count = 0
         
         # GIL rende gli assegnamenti di reference atomici — no lock needed
         self.state.latest_raw_frame = frame
+
+        self._send_native_passthrough(frame)
             
         self._capture_frame_id += 1
         frame_id = self._capture_frame_id
@@ -204,6 +211,33 @@ class ApplicationController:
         else:
             time.sleep(0.001)
 
+    def _handle_empty_frame(self, is_file: bool) -> None:
+        """Gestisce i frame vuoti: stop su file esaurito, riconnessione su webcam persa."""
+        self._empty_frames_count += 1
+        if self._empty_frames_count > 30:
+            if is_file:
+                self._log("Flusso video interrotto (>30 frame vuoti). Fine del file.")
+                self.state.source_exhausted = True
+                self.stop_event.set()
+            else:
+                self._log("Segnale perso (>30 frame vuoti). Tentativo di riconnessione...")
+                time.sleep(1.0)
+                if hasattr(self.video_input, 'reconnect') and self.video_input.reconnect():
+                    self._log("Riconnessione avvenuta con successo!")
+                    self._empty_frames_count = 0
+                else:
+                    self._log("Riconnessione fallita. Nuovo tentativo al prossimo ciclo.")
+            return
+        time.sleep(0.03)
+
+    def _send_native_passthrough(self, frame: np.ndarray) -> None:
+        """Invia il frame nativo (passthrough) via NDI se l'output nativo è abilitato."""
+        if self.state.is_outputting_native:
+            native_frame = VideoOutput.resize_and_pad(
+                frame, (self.state.obs_width, self.state.obs_height)
+            )
+            self.video_output.send_native_frame(native_frame)
+
     def _inference_loop(self) -> None:
         """Thread 2: Resize + Inference YOLO (Queue 1 -> Queue 2)."""
         raw_frame, frame_id, capture_time = self.q_capture_to_inference.get(timeout=0.1)
@@ -211,9 +245,9 @@ class ApplicationController:
         try:
             self.perf_monitor.mark_inference(frame_id)
             
-            # Resize a risoluzione OBS affinché le coordinate
+            # Resize a risoluzione output affinché le coordinate
             # calcolate da YOLO combacino con quelle della Regia.
-            working_frame = self.video_output._resize_and_pad(
+            working_frame = VideoOutput.resize_and_pad(
                 raw_frame, (self.state.obs_width, self.state.obs_height)
             )
             
@@ -245,7 +279,7 @@ class ApplicationController:
             self._log(f"Errore in Tracking/Directing: {e}")
 
     def _render_loop(self) -> None:
-        """Thread 4: Rendering GUI e output OBS (Consume from Queue 3)."""
+        """Thread 4: Rendering GUI e output NDI AI (Consume from Queue 3)."""
         frame_duration = 1.0 / self.state.output_fps
         loop_start = time.time()
         
@@ -253,10 +287,15 @@ class ApplicationController:
         
         self.perf_monitor.mark_render(metadata.frame_id, metadata.timestamp)
         
-        if self.state.is_outputting_to_obs:
-            self.video_output.send_frame(obs_frame)
-            # Skip GUI preview refresh to optimize performance
-        elif self.state.on_frame_ready:
+        # NDI AI output (indipendente dalla preview)
+        if self.state.is_outputting_ai:
+            ai_frame = VideoOutput.resize_and_pad(
+                obs_frame, (self.state.obs_width, self.state.obs_height)
+            )
+            self.video_output.send_ai_frame(ai_frame)
+
+        # GUI preview (indipendente dall'output NDI)
+        if self.state.on_frame_ready and debug_frame is not None:
             self.state.on_frame_ready(debug_frame)
 
         self._update_fps()

@@ -16,6 +16,7 @@ from PySide6.QtGui import QCloseEvent
 from config.settings import SettingsManager
 from core.interfaces import IController
 from gui.panels import control_panel_run, preview_panel_run, log_panel_run
+from video.input import VideoInput
 
 
 class UIBridge(QObject):
@@ -55,29 +56,32 @@ class MainWindow(QMainWindow):
         self.preview_panel = preview_panel_run()
         right_layout.addWidget(self.preview_panel)
 
-        self._setup_start_stop_buttons(right_layout)
+        self._setup_action_buttons(right_layout)
 
         self.log_panel = log_panel_run()
         right_layout.addWidget(self.log_panel)
 
-    def _setup_start_stop_buttons(self, layout: QVBoxLayout) -> None:
+    def _setup_action_buttons(self, layout: QVBoxLayout) -> None:
+        """Crea i pulsanti Avvia/Ferma Elaborazione sotto la preview."""
         btn_layout = QHBoxLayout()
-        self.start_btn = QPushButton("Avvia Elaborazione OBS")
-        self.stop_btn = QPushButton("Ferma Elaborazione OBS")
+        
+        self.start_btn = QPushButton("Avvia Elaborazione")
+        self.stop_btn = QPushButton("Ferma Elaborazione")
         self.stop_btn.setEnabled(False)
         btn_layout.addWidget(self.start_btn)
         btn_layout.addWidget(self.stop_btn)
+        
         layout.addLayout(btn_layout)
 
     def _connect_signals(self) -> None:
         self._connect_control_panel_signals()
         self._connect_preview_panel_signals()
-        self._connect_start_stop_signals()
+        self._connect_action_signals()
         self._connect_orchestrator_bridge()
         self._populate_sources()
         self._restore_config_to_ui()
 
-        # Avvia auto-preview generale ma non OBS output al lancio
+        # Avvia auto-preview generale ma non NDI output al lancio
         self.controller.start()
 
     def _connect_control_panel_signals(self) -> None:
@@ -91,12 +95,14 @@ class MainWindow(QMainWindow):
         cp.load_roi_requested.connect(self._on_load_roi)
         cp.create_roi_requested.connect(self._on_create_roi)
         cp.save_roi_requested.connect(self._on_save_roi)
+        cp.preview_toggled.connect(self._on_preview_toggled)
+        cp.native_toggled.connect(self._on_native_toggled)
 
     def _connect_preview_panel_signals(self) -> None:
         self.preview_panel.roi_point_added.connect(self._on_roi_point_added)
         self.preview_panel.roi_finalized.connect(self._on_roi_finalized)
 
-    def _connect_start_stop_signals(self) -> None:
+    def _connect_action_signals(self) -> None:
         self.start_btn.clicked.connect(self._on_start)
         self.stop_btn.clicked.connect(self._on_stop)
 
@@ -107,7 +113,6 @@ class MainWindow(QMainWindow):
         self.bridge.log_signal.connect(self.log_panel.append_message)
 
     def _populate_sources(self) -> None:
-        from video.input import VideoInput
         available_cams = VideoInput.get_available_cameras()
         saved_type = self.settings.get("source_type")
         saved_path = self.settings.get("source_path")
@@ -146,19 +151,33 @@ class MainWindow(QMainWindow):
 
     def _on_debug_toggled(self, checked: bool) -> None:
         self.settings.set("debug_mode", checked)
+        self.settings.set("enable_performance_monitor", checked)
 
     def _on_start(self) -> None:
-        if self.controller.start_obs_output():
+        if self.controller.start_ai_output():
             self.start_btn.setEnabled(False)
             self.stop_btn.setEnabled(True)
-            self.log_panel.append_message("Trasmissione OBS avviata. Preview messa in pausa per ottimizzare le performance.")
+            self.log_panel.append_message("Elaborazione NDI AI avviata.")
         else:
-            self.log_panel.append_message("Errore: impossibile avviare OBS (verificare plugin Virtual Camera).")
+            self.log_panel.append_message("Errore: impossibile avviare NDI AI (verificare NDI Runtime).")
 
     def _on_stop(self) -> None:
         self.stop_btn.setEnabled(False)
         self.start_btn.setEnabled(True)
-        self.controller.stop_obs_output()
+        self.controller.stop_ai_output()
+
+    def _on_preview_toggled(self, checked: bool) -> None:
+        self.controller.state.is_preview_enabled = checked
+        status = "attivata" if checked else "disattivata"
+        self.log_panel.append_message(f"Preview {status}.")
+
+    def _on_native_toggled(self, checked: bool) -> None:
+        if checked:
+            self.controller.start_native_output()
+            self.log_panel.append_message("NDI Output Nativo attivato.")
+        else:
+            self.controller.stop_native_output()
+            self.log_panel.append_message("NDI Output Nativo disattivato.")
 
     def _on_load_roi(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(

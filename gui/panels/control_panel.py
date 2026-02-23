@@ -18,6 +18,8 @@ class ControlPanel(QWidget):
     source_changed = Signal(object)          # (source_type, source_path)
     file_requested = Signal()
     debug_toggled = Signal(bool)
+    preview_toggled = Signal(bool)
+    native_toggled = Signal(bool)
     fixed_zoom_changed = Signal(int)
     dynamic_zoom_changed = Signal(int)
     kalman_changed = Signal(int)
@@ -44,9 +46,9 @@ class ControlPanel(QWidget):
         layout.addWidget(group)
 
         self._setup_source_controls(panel)
-        self._setup_debug_controls(panel)
         self._setup_ai_sliders(panel)
         self._setup_roi_controls(panel)
+        self._setup_output_toggles(panel)
         panel.addStretch()
 
     def _setup_source_controls(self, panel: QVBoxLayout) -> None:
@@ -59,10 +61,24 @@ class ControlPanel(QWidget):
         self.file_btn.setVisible(False)
         panel.addWidget(self.file_btn)
 
-    def _setup_debug_controls(self, panel: QVBoxLayout) -> None:
-        """Checkbox modalità debug."""
-        self.debug_cb = QCheckBox("Attiva Modalità Debug (Mostra FPS)")
-        panel.addWidget(self.debug_cb)
+    def _setup_output_toggles(self, panel: QVBoxLayout) -> None:
+        """Gruppo checkbox per Debug, Preview e NDI Nativo."""
+        output_group = QGroupBox("Output")
+        output_layout = QVBoxLayout()
+        output_group.setLayout(output_layout)
+        panel.addWidget(output_group)
+
+        self.debug_cb = QCheckBox("Modalità Debug (Mostra FPS)")
+        output_layout.addWidget(self.debug_cb)
+
+        self.preview_cb = QCheckBox("Mostra Preview")
+        self.preview_cb.setChecked(True)
+        self.preview_cb.setToolTip("Disattiva per migliorare le performance durante lo streaming")
+        output_layout.addWidget(self.preview_cb)
+
+        self.native_cb = QCheckBox("NDI Output Nativo")
+        self.native_cb.setToolTip("Attiva/disattiva l'invio del frame nativo (passthrough) via NDI")
+        output_layout.addWidget(self.native_cb)
 
     def _setup_ai_sliders(self, panel: QVBoxLayout) -> None:
         """Slider per zoom fisso, zoom dinamico e preset Kalman."""
@@ -103,6 +119,8 @@ class ControlPanel(QWidget):
         self.source_combo.currentIndexChanged.connect(self._on_source_index_changed)
         self.file_btn.clicked.connect(self.file_requested.emit)
         self.debug_cb.toggled.connect(self.debug_toggled.emit)
+        self.preview_cb.toggled.connect(self.preview_toggled.emit)
+        self.native_cb.toggled.connect(self.native_toggled.emit)
         self.fixed_zoom_slider.valueChanged.connect(self.fixed_zoom_changed.emit)
         self.dynamic_zoom_slider.valueChanged.connect(self.dynamic_zoom_changed.emit)
         self.kalman_slider.valueChanged.connect(self.kalman_changed.emit)

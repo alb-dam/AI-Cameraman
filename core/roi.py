@@ -7,14 +7,14 @@ e logica matematica vettoriale per le maschere di ritaglio.
 import json
 import os
 from typing import List, Tuple, Optional
+import logging
 
 import numpy as np
 
-from app.logger import get_logger
 from core.geometry import GeometryService
 from core.models import ROI
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
 
 class ROIManager:

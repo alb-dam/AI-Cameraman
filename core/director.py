@@ -1,7 +1,6 @@
 """Regia virtuale: pan, tilt, zoom dinamico/fisso e ritaglio.
 
 Architettura interna:
-    ActionCenterCalculator - calcolo centro d'azione basato su rilevamenti
     ValueSmoother      – smoothing dello zoom (scalare)
     PointSmoother      – smoothing temporale del centro inquadrato (2D)
     CameraStrategy     – calcolo zoom fisso + dinamico
@@ -9,52 +8,19 @@ Architettura interna:
 
 Nessuna dipendenza da YOLO o dal modulo detector.
 Input richiesti: frame, action_center, player_spread.
+
+NOTA: ActionCenterCalculator è stato spostato in core/tracking.py
 """
 
 import numpy as np
-from typing import List, Tuple, Optional
+from typing import Tuple, Optional
+import logging
 
-from app.logger import get_logger
-from core.models import CameraInstruction, TrackedObject
+from core.models import CameraInstruction
 from core.geometry import GeometryService
 
-logger = get_logger(__name__)
+logger = logging.getLogger(__name__)
 
-
-class ActionCenterCalculator:
-    """Calcola il centro d'azione come media ponderata giocatori + pallone."""
-
-    PLAYER_WEIGHT = 1.0
-    BALL_WEIGHT = 0.0
-
-    @classmethod
-    def compute_center(
-        cls,
-        players: List[TrackedObject],
-        ball: Optional[TrackedObject],
-    ) -> Optional[Tuple[int, int]]:
-        """Ritorna il baricentro ponderato dell'azione sul campo. Ritorna None se vuoto."""
-        if not players and not ball:
-            return None
-
-        total_w = 0.0
-        wx, wy = 0.0, 0.0
-
-        for p in players:
-            cx, cy = p.center
-            wx += cx * cls.PLAYER_WEIGHT
-            wy += cy * cls.PLAYER_WEIGHT
-            total_w += cls.PLAYER_WEIGHT
-
-        if ball:
-            bx, by = ball.center
-            wx += bx * cls.BALL_WEIGHT
-            wy += by * cls.BALL_WEIGHT
-            total_w += cls.BALL_WEIGHT
-
-        if total_w > 0:
-            return (int(wx / total_w), int(wy / total_w))
-        return None
 
 
 class ValueSmoother:
@@ -162,10 +128,18 @@ class CameraStrategy:
         self._MAX_SPREAD: float = 1000.0     # spread massimo (più alto = attesa prima di zoomare)
         self._DYNAMIC_SCALE: float = 1.0     # moltiplicatore massimo del bonus dinamico
 
-    def set_config(self, fixed_zoom_percent: float, dynamic_zoom_percent: float) -> None:
+    def set_config(
+        self,
+        fixed_zoom_percent: float,
+        dynamic_zoom_percent: float,
+        max_spread: float = 1000.0,
+        dynamic_scale: float = 1.0
+    ) -> None:
         """Traduce le percentuali UI (0-100) in valori interni."""
         self.fixed_zoom = 1.0 + (fixed_zoom_percent / 50.0)
         self.dynamic_intensity = dynamic_zoom_percent / 100.0
+        self._MAX_SPREAD = max_spread
+        self._DYNAMIC_SCALE = dynamic_scale
 
     def compute_target_zoom(self, player_spread: float) -> float:
         """Calcola lo zoom target (fisso + bonus dinamico basato sullo spread)."""
@@ -203,9 +177,10 @@ class Director:
         pan_tilt_smoothing: float = 0.03
     ) -> None:
         """Imposta i parametri dalla UI e configura filtri e deadzone."""
-        self.camera_strategy.set_config(fixed_zoom_percent, dynamic_zoom_percent)
-        self.camera_strategy._MAX_SPREAD = max_spread
-        self.camera_strategy._DYNAMIC_SCALE = dynamic_scale
+        self.camera_strategy.set_config(
+            fixed_zoom_percent, dynamic_zoom_percent,
+            max_spread=max_spread, dynamic_scale=dynamic_scale
+        )
         
         self.zoom_smoother.smoothing_factor = zoom_smoothing
         self.zoom_deadzone.threshold = zoom_deadzone
@@ -245,7 +220,6 @@ class Director:
         # 4. Addolcimento per i movimenti più lenti e decisi
         smoothed = self.pan_tilt_smoother.smooth(stable_target)
 
-        h, w = frame.shape[:2]
         center_int = (int(smoothed[0]), int(smoothed[1]))
         crop_box = GeometryService.calculate_crop_region(center_int, current_zoom, w, h)
 

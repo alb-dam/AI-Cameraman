@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import List, Dict, Any, Tuple, Optional
 
 from core.yolo_model import YoloDetector
-from core.director import ActionCenterCalculator
+from core.tracking import ActionCenterCalculator
 from core.models import Detection, TrackedObject, DetectionResult
 
 
