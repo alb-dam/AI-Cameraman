@@ -72,7 +72,7 @@ class VideoOutput:
         scale = min(tw / w, th / h)
         nw, nh = int(w * scale), int(h * scale)
 
-        resized = cv2.resize(frame, (nw, nh), interpolation=cv2.INTER_LINEAR)
+        resized = cv2.resize(frame, (nw, nh), interpolation=cv2.INTER_LANCZOS4)
 
         top = (th - nh) // 2
         bottom = th - nh - top
