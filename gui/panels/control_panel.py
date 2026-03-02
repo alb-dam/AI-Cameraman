@@ -161,6 +161,10 @@ class ControlPanel(QWidget):
                 if saved_type == "webcam" and str(i) == str(saved_path):
                     idx_to_select = self.source_combo.count() - 1
 
+        self.source_combo.addItem("Ricevitore SRT (Porta 9999)", userData=("srt", 9999))
+        if saved_type == "srt":
+            idx_to_select = self.source_combo.count() - 1
+
         self.source_combo.addItem("File Video...", userData=("file", saved_path))
         if saved_type == "file":
             idx_to_select = self.source_combo.count() - 1

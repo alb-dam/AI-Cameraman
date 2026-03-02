@@ -51,6 +51,7 @@ class ApplicationController:
 
         self._empty_frames_count = 0
         self._capture_frame_id = 0
+        self._last_reconnect_time: float = 0.0
 
     @property
     def roi_manager(self) -> 'IROIManager':
@@ -212,13 +213,33 @@ class ApplicationController:
             time.sleep(0.001)
 
     def _handle_empty_frame(self, is_file: bool) -> None:
-        """Gestisce i frame vuoti: stop su file esaurito, riconnessione su webcam persa."""
+        """Gestisce i frame vuoti: stop su file esaurito, riconnessione su sorgente live persa."""
         self._empty_frames_count += 1
-        if self._empty_frames_count > 30:
+        is_srt = self.settings.get("source_type") == "srt"
+        
+        # Soglia più alta per SRT: il segnale può interrompersi brevemente
+        threshold = 60 if is_srt else 30
+        
+        if self._empty_frames_count > threshold:
             if is_file:
-                self._log("Flusso video interrotto (>30 frame vuoti). Fine del file.")
+                self._log("Flusso video interrotto (> frame vuoti). Fine del file.")
                 self.state.source_exhausted = True
                 self.stop_event.set()
+            elif is_srt:
+                # Per SRT listener: non bloccare il thread con un reconnect da 30s.
+                # Aspettiamo passivamente con un cooldown, il mittente tornerà.
+                now = time.time()
+                cooldown = 5.0  # secondi tra un tentativo e l'altro
+                if now - self._last_reconnect_time >= cooldown:
+                    self._last_reconnect_time = now
+                    self._log("Segnale SRT perso. Riapertura listener in attesa del mittente...")
+                    if hasattr(self.video_input, 'reconnect') and self.video_input.reconnect():
+                        self._log("Listener SRT riaperto, in attesa di connessione.")
+                        self._empty_frames_count = 0
+                    else:
+                        self._log("Riapertura listener SRT fallita. Nuovo tentativo tra 5s.")
+                else:
+                    time.sleep(0.1)  # attesa non bloccante
             else:
                 self._log("Segnale perso (>30 frame vuoti). Tentativo di riconnessione...")
                 time.sleep(1.0)
@@ -239,17 +260,21 @@ class ApplicationController:
             self.video_output.send_native_frame(native_frame)
 
     def _inference_loop(self) -> None:
-        """Thread 2: Resize + Inference YOLO (Queue 1 -> Queue 2)."""
+        """Thread 2: Inference YOLO alla risoluzione nativa (Queue 1 -> Queue 2).
+        
+        Non viene eseguito resize prima dell'inferenza: YOLO, tracking e director
+        lavorano tutti sul frame nativo della sorgente. Il resize a risoluzione NDI
+        avviene una sola volta nel render thread (resize_and_pad finale).
+        """
         raw_frame, frame_id, capture_time = self.q_capture_to_inference.get(timeout=0.1)
         
         try:
             self.perf_monitor.mark_inference(frame_id)
             
-            # Resize a risoluzione output affinché le coordinate
-            # calcolate da YOLO combacino con quelle della Regia.
-            working_frame = VideoOutput.resize_and_pad(
-                raw_frame, (self.state.obs_width, self.state.obs_height)
-            )
+            # Lavoriamo alla risoluzione nativa della sorgente.
+            # Questo garantisce che il crop dello zoom avvenga con il massimo
+            # dettaglio disponibile, specialmente con sorgenti >= risoluzione output.
+            working_frame = raw_frame
             
             det_out = self.pipeline.run_inference(working_frame)
             self.q_inference_to_tracking.put((working_frame, det_out, frame_id, capture_time))

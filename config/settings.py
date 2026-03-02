@@ -24,8 +24,8 @@ class AppSettings:
     enable_performance_monitor: bool = False
     
     # Impostazioni Output indipendenti dall'input
-    output_width: int = 1280
-    output_height: int = 720
+    output_width: int = 1920
+    output_height: int = 1080
     output_fps: int = 30
     
     fixed_zoom_percent: float = 25.0

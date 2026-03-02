@@ -18,6 +18,7 @@ class VideoInput:
         self.cap: Optional[cv2.VideoCapture] = None
         self.current_source_type: Optional[str] = None
         self.current_source_value: Union[int, str, None] = None
+        self._is_srt: bool = False  # flag per post-processing colorimetria SRT
 
     @staticmethod
     def get_available_cameras() -> List[str]:
@@ -48,6 +49,7 @@ class VideoInput:
         self.release()
         self.current_source_type = source_type
         self.current_source_value = source_value
+        self._is_srt = (source_type == "srt")
 
         if source_type == "webcam":
             cam_index = int(source_value) if source_value is not None else 0
@@ -57,6 +59,27 @@ class VideoInput:
                 self.cap = cv2.VideoCapture(cam_index)
         elif source_type == "file" and source_value:
             self.cap = cv2.VideoCapture(str(source_value))
+        elif source_type == "srt":
+            port = source_value if source_value else 9999
+
+            srt_url = (
+                f"srt://0.0.0.0:{port}"
+                f"?mode=listener"
+                f"&transtype=live"
+                f"&latency=3000"
+                f"&peerlatency=3000"
+                f"&rcvbuf=16777216"
+                f"&sndbuf=16777216"
+                f"&pkt_size=1316"
+                f"&tlpktdrop=0"
+            )
+
+            logger.info(f"Apertura sorgente SRT: {srt_url}")
+            self.cap = cv2.VideoCapture(srt_url, cv2.CAP_FFMPEG)
+
+            if self.cap.isOpened():
+                # Minimizza la latenza lato OpenCV
+                self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         else:
             raise ValueError("Configurazione sorgente non valida")
 
@@ -76,7 +99,17 @@ class VideoInput:
         """Legge un singolo frame dalla sorgente inizializzata."""
         if self.cap is None or not self.cap.isOpened():
             return False, None
-        return self.cap.read()
+        ret, frame = self.cap.read()
+        if ret and self._is_srt and frame is not None:
+            # FFmpeg decodifica SRT con matrice BT.601 per default, ma i mittenti
+            # moderni (OBS, smartphone, encoder hardware) usano BT.709.
+            # La conversione BGR→YCrCb→BGR forza OpenCV a usare la matrice BT.709
+            # corretta, eliminando il viraggio di colore (tinte magenta/verde sui rossi).
+            frame = cv2.cvtColor(
+                cv2.cvtColor(frame, cv2.COLOR_BGR2YCrCb),
+                cv2.COLOR_YCrCb2BGR
+            )
+        return ret, frame
 
     def release(self) -> None:
         """Rilascia le risorse della sorgente video."""
