@@ -52,6 +52,15 @@ class ApplicationController:
         self._empty_frames_count = 0
         self._capture_frame_id = 0
         self._last_reconnect_time: float = 0.0
+        self._last_srt_shape: Optional[tuple] = None
+        
+        # Logging debounce flags
+        self._log_file_exhausted: bool = False
+        self._srt_reconnecting: bool = False
+        self._camera_reconnecting: bool = False
+        self._ai_output_error_logged: bool = False
+        self._ai_ndi_missing_logged: bool = False
+        self._native_output_error_logged: bool = False
 
     @property
     def roi_manager(self) -> 'IROIManager':
@@ -63,13 +72,34 @@ class ApplicationController:
 
         source_type = self.settings.get("source_type")
         source_path = self.settings.get("source_path")
+        
+        self.stop_event.clear()
+        
+        # Start initialization in a background thread to prevent GUI freeze (especially with SRT)
+        init_thread = threading.Thread(
+            target=self._async_initialize, 
+            args=(source_type, source_path),
+            daemon=True
+        )
+        init_thread.start()
 
+    def _async_initialize(self, source_type: str, source_path: str) -> None:
+        """Inizializzazione bloccante eseguita in background."""
         try:
+            self._log(f"Inizializzazione sorgente in corso ({source_type})...")
             self.video_input.initialize_source(source_type, source_path)
-            label = f"file {source_path}" if source_type == "file" else "webcam"
+            if self.stop_event.is_set():
+                self.video_input.release()
+                return
+                
+            label = f"file {source_path}" if source_type == "file" else source_type
             self._log(f"Sorgente inizializzata: {label}")
         except Exception as e:
-            self._log(f"Errore inizializzazione sorgente: {e}")
+            self._log(f"Avviso: {e}. La pipeline tenterà la riconnessione automatica.")
+            # Rimuoviamo il return: vogliamo che i thread si avviino comunque, 
+            # così il _capture_loop invocherà _handle_empty_frame e gestirà i retry all'infinito!
+            
+        if self.stop_event.is_set():
             return
 
         input_fps = self.video_input.get_fps()
@@ -87,7 +117,6 @@ class ApplicationController:
                                          obs_width, obs_height, int(output_fps))
 
         self.state.reset_for_start(input_fps, output_fps, obs_width, obs_height, time.time())
-        self.stop_event.clear()
         
         self.q_capture_to_inference.clear()
         self.q_inference_to_tracking.clear()
@@ -138,30 +167,54 @@ class ApplicationController:
                 self._log(f"Errore durante la chiusura di video_output: {e}")
 
     def start_ai_output(self) -> bool:
-        if not self.state.is_running:
+        if getattr(self, "_ai_output_error_logged", False) is False and not self.state.is_running:
             self._log("Errore: impossibile avviare NDI AI senza sorgente.")
+            self._ai_output_error_logged = True
             return False
+        elif not self.state.is_running:
+            return False
+
         if getattr(self.video_output, "ndi_ai", None) is None:
-            self._log("Errore: NDI AI Sender non inizializzato.")
+            if not getattr(self, "_ai_ndi_missing_logged", False):
+                self._log("Errore: NDI AI Sender non inizializzato.")
+                self._ai_ndi_missing_logged = True
             return False
+            
+        self._ai_output_error_logged = False
+        self._ai_ndi_missing_logged = False
+            
+        if self.state.is_outputting_ai:
+            return True
             
         self.state.is_outputting_ai = True
         self._log("Trasmissione NDI AI avviata.")
         return True
 
     def stop_ai_output(self) -> None:
+        if not self.state.is_outputting_ai:
+            return
         self.state.is_outputting_ai = False
         self._log("Trasmissione NDI AI fermata.")
 
     def start_native_output(self) -> None:
         if not self.state.is_running:
-            self._log("Errore: impossibile avviare NDI Native senza sorgente.")
+            if not getattr(self, "_native_output_error_logged", False):
+                self._log("Errore: impossibile avviare NDI Native senza sorgente.")
+                self._native_output_error_logged = True
             return
+        
+        self._native_output_error_logged = False
+            
+        if self.state.is_outputting_native:
+            return
+            
         self.state.is_outputting_native = True
         self.video_output.set_native_enabled(True)
         self._log("Trasmissione NDI Native avviata.")
 
     def stop_native_output(self) -> None:
+        if not self.state.is_outputting_native:
+            return
         self.state.is_outputting_native = False
         self.video_output.set_native_enabled(False)
         self._log("Trasmissione NDI Native fermata.")
@@ -188,6 +241,18 @@ class ApplicationController:
         if not ret:
             self._handle_empty_frame(is_file)
             return
+
+        # Rilevamento cambi di risoluzione mid-stream (es. cambio orientamento senza disconnessione)
+        if self.settings.get("source_type") == "srt":
+            if self._last_srt_shape is None:
+                self._last_srt_shape = frame.shape
+            elif self._last_srt_shape != frame.shape:
+                self._log(f"Rilevato cambio RTP in-stream ({self._last_srt_shape} -> {frame.shape}). Forzo riavvio listener...")
+                self._last_srt_shape = None
+                self._last_reconnect_time = 0.0  # Bypass cooldown
+                self._empty_frames_count = 1
+                self._handle_empty_frame(is_file)
+                return
 
         self._empty_frames_count = 0
         
@@ -217,37 +282,43 @@ class ApplicationController:
         self._empty_frames_count += 1
         is_srt = self.settings.get("source_type") == "srt"
         
-        # Soglia più alta per SRT: il segnale può interrompersi brevemente
-        threshold = 60 if is_srt else 30
+        # Per SRT applichiamo threshold 0 (riavvio istantaneo) per evitare che FFmpeg accetti una
+        # nuova connessione sullo stesso socket, incasinando il decoder dopo un cambio orientamento.
+        threshold = 0 if is_srt else 30
         
         if self._empty_frames_count > threshold:
             if is_file:
-                self._log("Flusso video interrotto (> frame vuoti). Fine del file.")
+                if not getattr(self, "_log_file_exhausted", False):
+                    self._log("Flusso video interrotto (> frame vuoti). Fine del file.")
+                    self._log_file_exhausted = True
                 self.state.source_exhausted = True
                 self.stop_event.set()
             elif is_srt:
-                # Per SRT listener: non bloccare il thread con un reconnect da 30s.
-                # Aspettiamo passivamente con un cooldown, il mittente tornerà.
                 now = time.time()
-                cooldown = 5.0  # secondi tra un tentativo e l'altro
+                # Cooldown ridotto per mantenere la porta in ascolto il più a lungo possibile.
+                cooldown = 0.5
                 if now - self._last_reconnect_time >= cooldown:
-                    self._last_reconnect_time = now
-                    self._log("Segnale SRT perso. Riapertura listener in attesa del mittente...")
+                    self._last_reconnect_time = time.time()
+                    if not getattr(self, "_srt_reconnecting", False):
+                        self._log("Segnale SRT perso o orientamento cambiato. Riapertura immediata listener...")
+                        self._srt_reconnecting = True
+                    
                     if hasattr(self.video_input, 'reconnect') and self.video_input.reconnect():
-                        self._log("Listener SRT riaperto, in attesa di connessione.")
+                        self._log("Listener SRT riaperto e segnale ripristinato con successo.")
                         self._empty_frames_count = 0
-                    else:
-                        self._log("Riapertura listener SRT fallita. Nuovo tentativo tra 5s.")
+                        self._srt_reconnecting = False
+                        self._last_srt_shape = None
                 else:
-                    time.sleep(0.1)  # attesa non bloccante
+                    time.sleep(0.05)  # attesa ridotta non bloccante
             else:
-                self._log("Segnale perso (>30 frame vuoti). Tentativo di riconnessione...")
+                if not getattr(self, "_camera_reconnecting", False):
+                    self._log("Segnale perso (>30 frame vuoti). Tentativi continui di riconnessione in background...")
+                    self._camera_reconnecting = True
                 time.sleep(1.0)
                 if hasattr(self.video_input, 'reconnect') and self.video_input.reconnect():
-                    self._log("Riconnessione avvenuta con successo!")
+                    self._log("Riconnessione sorgente avvenuta con successo!")
                     self._empty_frames_count = 0
-                else:
-                    self._log("Riconnessione fallita. Nuovo tentativo al prossimo ciclo.")
+                    self._camera_reconnecting = False
             return
         time.sleep(0.03)
 

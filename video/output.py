@@ -54,6 +54,9 @@ class VideoOutput:
 
     def set_native_enabled(self, enabled: bool) -> None:
         """Abilita o disabilita l'invio del frame nativo via NDI."""
+        if self._native_enabled == enabled:
+            return
+        
         self._native_enabled = enabled
         state = "abilitato" if enabled else "disabilitato"
         logger.info(f"NDI Native output {state}.")

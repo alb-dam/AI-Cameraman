@@ -74,12 +74,20 @@ class VideoInput:
                 f"&tlpktdrop=0"
             )
 
-            logger.info(f"Apertura sorgente SRT: {srt_url}")
-            self.cap = cv2.VideoCapture(srt_url, cv2.CAP_FFMPEG)
+            # Imposta le opzioni globali ffmpeg per evitare blocchi infiniti su OpenCV
+            # timeout e listen_timeout e rw_timeout in microsecondi (es. 2000000 = 2 sec)
+            import os
+            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "timeout;2000000|listen_timeout;2000000|rw_timeout;2000000"
 
-            if self.cap.isOpened():
+            logger.info(f"Apertura sorgente SRT: {srt_url}")
+            cap = cv2.VideoCapture(srt_url, cv2.CAP_FFMPEG)
+
+            if isinstance(cap, cv2.VideoCapture) and cap.isOpened():
                 # Minimizza la latenza lato OpenCV
-                self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                self.cap = cap
+            else:
+                self.cap = cap
         else:
             raise ValueError("Configurazione sorgente non valida")
 
