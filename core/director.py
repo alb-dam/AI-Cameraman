@@ -110,13 +110,10 @@ class ScalarDeadzoneFilter:
         if diff <= self.threshold:
             return stable
             
-        if target_value > stable:
-            new_val = target_value - self.threshold
-        else:
-            new_val = target_value + self.threshold
-            
-        self.stable_value = new_val
-        return new_val
+        # Al di fuori della deadzone, agganciamo esattamente il target
+        # (invece di usare un leash) per evitare che lo zoom rimanga permanentemente sfalsato.
+        self.stable_value = target_value
+        return target_value
 
 
 class CameraStrategy:

@@ -23,11 +23,6 @@ class AppSettings:
     debug_mode: bool = False
     enable_performance_monitor: bool = False
     
-    # Impostazioni Output indipendenti dall'input
-    output_width: int = 1920
-    output_height: int = 1080
-    output_fps: int = 30
-    
     fixed_zoom_percent: float = 25.0
     dynamic_zoom_percent: float = 50.0
     kalman_preset_percent: float = 100.0
@@ -48,7 +43,7 @@ class AppSettings:
     
     # Spread massimo dei giocatori prima che il bonus dinamico venga annullato (espresso in percentuale 0-1 basata sulla diagonale del frame).
     # Valori più alti (es. 0.8) = la camera attende che i giocatori siano molto più lontani prima di fare zoom out.
-    director_max_spread: float = 1.0
+    director_max_spread: float = 0.6
     
     # Moltiplicatore massimo per il bonus di zoom dinamico.
     # Valori più bassi (es. 0.3) = zoom dinamico più dolce. Valori ad. 1.0 = zoom aggressivo. (Due corrisponde ad un 3x)

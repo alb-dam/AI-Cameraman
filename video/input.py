@@ -103,6 +103,16 @@ class VideoInput:
             return 30.0
         return float(fps)
 
+    def get_resolution(self) -> Tuple[int, int]:
+        """Ritorna la risoluzione (width, height) della sorgente."""
+        if self.cap is None:
+            return 1920, 1080
+        w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        if w <= 0 or h <= 0:
+            return 1920, 1080
+        return w, h
+
     def read_frame(self) -> Tuple[bool, Any]:
         """Legge un singolo frame dalla sorgente inizializzata."""
         if self.cap is None or not self.cap.isOpened():

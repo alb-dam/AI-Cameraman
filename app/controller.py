@@ -106,17 +106,15 @@ class ApplicationController:
         if input_fps <= 0:
             input_fps = 30.0
 
-        output_fps = self.settings.get("output_fps")
-        obs_width = self.settings.get("output_width")
-        obs_height = self.settings.get("output_height")
+        obs_width, obs_height = self.video_input.get_resolution()
 
         # Inizializza i sender NDI (AI + Native)
         ndi_ai_name = self.settings.get("ndi_ai_name")
         ndi_native_name = self.settings.get("ndi_native_name")
         self.video_output.initialize_ndi(ndi_ai_name, ndi_native_name,
-                                         obs_width, obs_height, int(output_fps))
+                                         obs_width, obs_height, int(input_fps))
 
-        self.state.reset_for_start(input_fps, output_fps, obs_width, obs_height, time.time())
+        self.state.reset_for_start(input_fps, obs_width, obs_height, time.time())
         
         self.q_capture_to_inference.clear()
         self.q_inference_to_tracking.clear()
@@ -134,7 +132,7 @@ class ApplicationController:
         self.tracking_thread.start()
         self.render_thread.start()
         
-        self._log(f"Elaborazione avviata (IN: {input_fps:.1f} FPS, OUT: {output_fps} FPS @ {obs_width}x{obs_height}).")
+        self._log(f"Elaborazione avviata (IN/OUT: {input_fps:.1f} FPS @ {obs_width}x{obs_height}).")
         self._log("Pipeline multithread a 4 stadi attiva (C -> I -> T -> R).")
 
     def stop(self) -> None:
@@ -376,9 +374,6 @@ class ApplicationController:
 
     def _render_loop(self) -> None:
         """Thread 4: Rendering GUI e output NDI AI (Consume from Queue 3)."""
-        frame_duration = 1.0 / self.state.output_fps
-        loop_start = time.time()
-        
         obs_frame, debug_frame, metadata = self.q_tracking_to_render.get(timeout=0.1)
         
         self.perf_monitor.mark_render(metadata.frame_id, metadata.timestamp)
@@ -395,10 +390,6 @@ class ApplicationController:
             self.state.on_frame_ready(debug_frame)
 
         self._update_fps()
-
-        sleep_time = frame_duration - (time.time() - loop_start)
-        if sleep_time > 0:
-            time.sleep(sleep_time)
 
     def _update_fps(self) -> None:
         self.state.frames_processed += 1

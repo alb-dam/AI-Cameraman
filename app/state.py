@@ -29,17 +29,15 @@ class RuntimeState:
         self.current_fps: float = 0.0
         
         self.input_fps: float = 30.0
-        self.output_fps: float = 30.0
         self.obs_width: int = 1920
         self.obs_height: int = 1080
 
-    def reset_for_start(self, input_fps: float, output_fps: float, width: int, height: int, start_time: float) -> None:
+    def reset_for_start(self, input_fps: float, width: int, height: int, start_time: float) -> None:
         """Resetta lo stato per una nuova sessione di elaborazione."""
         self.is_running = True
         self.source_exhausted = False
         
         self.input_fps = input_fps
-        self.output_fps = output_fps
         self.obs_width = width
         self.obs_height = height
         
