@@ -95,6 +95,7 @@ class MainWindow(QMainWindow):
         cp.load_roi_requested.connect(self._on_load_roi)
         cp.create_roi_requested.connect(self._on_create_roi)
         cp.save_roi_requested.connect(self._on_save_roi)
+        cp.generate_roi_requested.connect(self._on_generate_roi)
         cp.preview_toggled.connect(self._on_preview_toggled)
         cp.native_toggled.connect(self._on_native_toggled)
 
@@ -218,6 +219,10 @@ class MainWindow(QMainWindow):
         self.controller.roi_manager.finalize_roi()
         self.preview_panel.set_roi_editing(False)
         self.log_panel.append_message("ROI finalizzata.")
+
+    def _on_generate_roi(self) -> None:
+        self.log_panel.append_message("Generazione ROI automatica in corso (raccolta frame per 2 minuti)...")
+        self.controller.generate_roi()
 
     def _on_frame_received(self, frame: np.ndarray) -> None:
         if frame is None:

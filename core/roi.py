@@ -9,6 +9,7 @@ import os
 from typing import List, Tuple, Optional
 import logging
 
+import cv2
 import numpy as np
 
 from core.geometry import GeometryService
@@ -142,6 +143,178 @@ class ROIManager:
             frame, self.roi.polygon, color=color, thickness=thickness
         )
 
+    # ── Generazione automatica ROI con SAM3 ─────────────────────────────
+
+    def generate_roi_from_video(self, frames: List[np.ndarray], save_path: str) -> bool:
+        """Genera automaticamente la ROI del campo da basket usando SAM3.
+
+        1. Calcola la mediana dei frame per rimuovere i giocatori
+        2. Applica filtro Gaussiano per ridurre artefatti residui
+        3. Segmenta il campo con SAM3 (text prompt 'basketball court')
+        4. Estrae il contorno della maschera più grande come punti normalizzati
+
+        Args:
+            frames: Lista di frame (np.ndarray BGR) campionati dal video.
+            save_path: Percorso dove salvare il file roi.json generato.
+
+        Returns:
+            True se la ROI è stata generata con successo, False altrimenti.
+        """
+        if len(frames) < 2:
+            logger.error("Genera ROI: servono almeno 2 frame, ricevuti %d.", len(frames))
+            return False
+
+        try:
+            # 1. Mediana dei frame per rimuovere oggetti in movimento (giocatori)
+            logger.info("Genera ROI: calcolo mediana di %d frame...", len(frames))
+            stacked = np.stack(frames, axis=0)
+            median_frame = np.median(stacked, axis=0).astype(np.uint8)
+
+            # 2. Filtro bilaterale: sfuma il rumore ma preserva i bordi netti del campo
+            median_frame = cv2.bilateralFilter(median_frame, d=9, sigmaColor=75, sigmaSpace=75)
+
+            # 3. CLAHE (contrasto adattivo) + riduzione esposizione per esaltare il campo
+            lab = cv2.cvtColor(median_frame, cv2.COLOR_BGR2LAB)
+            l, a, b = cv2.split(lab)
+            clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+            l = clahe.apply(l)
+            l = np.clip(l * 0.8, 0, 255).astype(np.uint8)  # riduzione esposizione 20%
+            lab = cv2.merge([l, a, b])
+            median_frame = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+
+            cv2.imwrite("debug_median_frame.png", median_frame)
+            logger.info("Genera ROI: filtro bilaterale + CLAHE + riduzione esposizione applicati. "
+                        "Mediana salvata in debug_median_frame.png.")
+
+            # 3. Segmentazione con SAM3
+            logger.info("Genera ROI: avvio segmentazione SAM3...")
+            masks, scores = self._run_sam3_segmentation(median_frame)
+            if masks is None or len(masks) == 0:
+                logger.error("Genera ROI: SAM3 non ha prodotto maschere.")
+                return False
+
+            # 4. Unisci maschere significative (>5% del frame) per includere zone colorate
+            h, w = median_frame.shape[:2]
+            min_area = h * w * 0.05  # soglia 5% dell'area totale
+            merged_mask = np.zeros((h, w), dtype=np.uint8)
+            included = 0
+            for m in masks:
+                m_uint8 = (m * 255).astype(np.uint8) if m.max() <= 1 else m.astype(np.uint8)
+                if m_uint8.shape != (h, w):
+                    m_uint8 = cv2.resize(m_uint8, (w, h), interpolation=cv2.INTER_NEAREST)
+                # Scarta maschere troppo piccole (tabelloni, panchine, ecc.)
+                if cv2.countNonZero(m_uint8) < min_area:
+                    continue
+                merged_mask = cv2.bitwise_or(merged_mask, m_uint8)
+                included += 1
+            logger.info("Genera ROI: unite %d/%d maschere SAM3 (scartate %d < 5%% frame).",
+                        included, len(masks), len(masks) - included)
+
+            # 5. Post-processing morfologico: kernel grande per unire zone separate
+            kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (51, 51))
+            merged_mask = cv2.morphologyEx(merged_mask, cv2.MORPH_CLOSE, kernel, iterations=3)
+            kernel_small = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (15, 15))
+            merged_mask = cv2.morphologyEx(merged_mask, cv2.MORPH_OPEN, kernel_small, iterations=2)
+            logger.info("Genera ROI: post-processing morfologico applicato.")
+
+            # 6. Estrai contorno e applica convex hull per includere tutto il campo
+            contours, _ = cv2.findContours(merged_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            if not contours:
+                logger.error("Genera ROI: nessun contorno trovato nella maschera.")
+                return False
+
+            # Prendi il contorno più grande e calcola il convex hull
+            largest_contour = max(contours, key=cv2.contourArea)
+            hull = cv2.convexHull(largest_contour)
+
+            # Semplifica il convex hull per un poligono più pulito
+            epsilon = 0.01 * cv2.arcLength(hull, True)
+            approx = cv2.approxPolyDP(hull, epsilon, True)
+
+            # Normalizza i punti (0-1)
+            norm_points = [(float(p[0][0]) / w, float(p[0][1]) / h) for p in approx]
+
+            if len(norm_points) < 3:
+                logger.error("Genera ROI: contorno troppo semplice (%d punti).", len(norm_points))
+                return False
+
+            # Margine di sicurezza 2%: espandi i punti dal centroide
+            cx = sum(p[0] for p in norm_points) / len(norm_points)
+            cy = sum(p[1] for p in norm_points) / len(norm_points)
+            margin = 1.02  # 2% di espansione
+            norm_points = [
+                (max(0.0, min(1.0, cx + (px - cx) * margin)),
+                 max(0.0, min(1.0, cy + (py - cy) * margin)))
+                for px, py in norm_points
+            ]
+
+            # Chiudi il poligono
+            if norm_points[0] != norm_points[-1]:
+                norm_points.append(norm_points[0])
+
+            # 6. Imposta la ROI e salva
+            self.create_from_points(norm_points)
+            self.save_roi(save_path)
+            logger.info("Genera ROI: completata con successo (%d punti).", len(norm_points))
+            return True
+
+        except Exception as e:
+            logger.error("Genera ROI: errore durante la generazione: %s", e)
+            return False
+
+    @staticmethod
+    def _run_sam3_segmentation(frame: np.ndarray):
+        """Esegue la segmentazione SAM3 con text prompt 'basketball court'.
+
+        Returns:
+            Tupla (masks, scores) dove masks è una lista di array binari
+            e scores le relative confidenze, oppure (None, None) in caso di errore.
+        """
+        try:
+            from ultralytics.models.sam import SAM3SemanticPredictor
+        except ImportError:
+            logger.error("Genera ROI: ultralytics SAM3SemanticPredictor non disponibile. "
+                         "Aggiornare ultralytics: pip install -U ultralytics")
+            return None, None
+
+        model_path = os.path.join("assets", "sam3.pt")
+        if not os.path.exists(model_path):
+            logger.error("Genera ROI: modello SAM3 non trovato in %s. "
+                         "Scaricarlo da HuggingFace: "
+                         "https://huggingface.co/facebook/sam3/resolve/main/sam3.pt",
+                         model_path)
+            return None, None
+
+        try:
+            overrides = dict(
+                conf=0.50,
+                task="segment",
+                mode="predict",
+                model=model_path,
+                save=False,
+                verbose=False,
+            )
+            predictor = SAM3SemanticPredictor(overrides=overrides)
+            predictor.set_image(frame)
+            results = predictor(text=["basketball court"])
+
+            if results is None or len(results) == 0:
+                return None, None
+
+            result = results[0]
+            if result.masks is None or result.masks.data is None:
+                return None, None
+
+            masks = result.masks.data.cpu().numpy()
+            # Threshold esplicito: solo pixel con confidenza >= 0.7
+            masks = (masks >= 0.7).astype(np.uint8)
+            scores = result.boxes.conf.cpu().numpy() if result.boxes is not None else None
+            return masks, scores
+
+        except Exception as e:
+            logger.error("Genera ROI: errore SAM3: %s", e)
+            return None, None
+
 
 def roi_manager_run(filepath: Optional[str] = None) -> ROIManager:
     """Entry point per la creazione del ROIManager."""
@@ -149,3 +322,4 @@ def roi_manager_run(filepath: Optional[str] = None) -> ROIManager:
     if filepath and os.path.exists(filepath):
         rm.load_roi(filepath)
     return rm
+

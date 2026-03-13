@@ -66,6 +66,54 @@ class ApplicationController:
     def roi_manager(self) -> 'IROIManager':
         return self.pipeline.roi_manager
 
+    def generate_roi(self) -> None:
+        """Avvia la raccolta di 60 frame equidistanti in 2 minuti e genera la ROI automatica."""
+        if not self.state.is_running:
+            self._log("Errore: impossibile generare ROI senza sorgente attiva.")
+            return
+
+        thread = threading.Thread(target=self._generate_roi_worker, daemon=True)
+        thread.start()
+
+    def _generate_roi_worker(self) -> None:
+        """Worker thread: raccoglie 60 frame equidistanti in 2 minuti e genera la ROI."""
+        import time as _time
+
+        target_frames = 60
+        duration_seconds = 20  # 3 minuti
+        # Intervallo tra campionamenti: 1 frame ogni 2 secondi
+        sample_interval = duration_seconds / target_frames  # = 2.0 secondi
+
+        self._log(f"Genera ROI: raccolta di {target_frames} frame in {duration_seconds}s "
+                  f"(1 frame ogni {sample_interval:.1f}s)...")
+
+        collected_frames = []
+        for i in range(target_frames):
+            if self.stop_event.is_set():
+                self._log("Genera ROI: interrotta (pipeline fermata).")
+                return
+
+            frame = self.state.latest_raw_frame
+            if frame is not None:
+                collected_frames.append(frame.copy())
+
+            # Aspetta il prossimo campionamento (tranne l'ultimo)
+            if i < target_frames - 1:
+                _time.sleep(sample_interval)
+
+        if len(collected_frames) < 2:
+            self._log("Genera ROI: frame insufficienti raccolti. Verifica la sorgente video.")
+            return
+
+        self._log(f"Genera ROI: {len(collected_frames)} frame raccolti. Avvio segmentazione SAM3...")
+        success = self.roi_manager.generate_roi_from_video(collected_frames, "roi.json")
+
+        if success:
+            self.settings.set("last_roi_path", "roi.json")
+            self._log("ROI generata automaticamente e salvata in roi.json.")
+        else:
+            self._log("Genera ROI: fallita. Controllare i log per dettagli.")
+
     def start(self) -> None:
         if self.state.is_running:
             self.stop()

@@ -26,6 +26,7 @@ class ControlPanel(QWidget):
     load_roi_requested = Signal()
     create_roi_requested = Signal()
     save_roi_requested = Signal()
+    generate_roi_requested = Signal()
 
     # ── Inizializzazione ────────────────────────────────────────────────
 
@@ -107,9 +108,11 @@ class ControlPanel(QWidget):
 
         self.btn_load_roi = QPushButton("Carica ROI")
         self.btn_create_roi = QPushButton("Crea ROI")
+        self.btn_generate_roi = QPushButton("Genera ROI")
         self.btn_save_roi = QPushButton("Salva ROI")
         roi_layout.addWidget(self.btn_load_roi)
         roi_layout.addWidget(self.btn_create_roi)
+        roi_layout.addWidget(self.btn_generate_roi)
         roi_layout.addWidget(self.btn_save_roi)
 
     # ── Connessioni interne ─────────────────────────────────────────────
@@ -127,6 +130,7 @@ class ControlPanel(QWidget):
         self.btn_load_roi.clicked.connect(self.load_roi_requested.emit)
         self.btn_create_roi.clicked.connect(self.create_roi_requested.emit)
         self.btn_save_roi.clicked.connect(self.save_roi_requested.emit)
+        self.btn_generate_roi.clicked.connect(self.generate_roi_requested.emit)
 
     def _on_source_index_changed(self, index: int) -> None:
         """Emette source_changed con i dati associati all'item selezionato."""
