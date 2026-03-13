@@ -42,15 +42,15 @@ class VideoOutput:
             logger.error("Impossibile aprire il sender NDI Native.")
             self.ndi_native = None
 
-    def send_ai_frame(self, frame: np.ndarray) -> None:
+    def send_ai_frame(self, frame: np.ndarray, audio_data: Optional[np.ndarray] = None) -> None:
         """Invia il frame elaborato dall'AI al sender NDI AI."""
         if self.ndi_ai is not None and frame is not None:
-            self.ndi_ai.send_frame(frame)
+            self.ndi_ai.send_frame(frame, audio_data)
 
-    def send_native_frame(self, frame: np.ndarray) -> None:
+    def send_native_frame(self, frame: np.ndarray, audio_data: Optional[np.ndarray] = None) -> None:
         """Invia il frame raw/nativo al sender NDI Native (se abilitato)."""
         if self._native_enabled and self.ndi_native is not None and frame is not None:
-            self.ndi_native.send_frame(frame)
+            self.ndi_native.send_frame(frame, audio_data)
 
     def set_native_enabled(self, enabled: bool) -> None:
         """Abilita o disabilita l'invio del frame nativo via NDI."""

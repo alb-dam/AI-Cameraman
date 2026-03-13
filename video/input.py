@@ -3,6 +3,9 @@
 import cv2
 import platform
 import sys
+import platform
+import sys
+import numpy as np
 from typing import List, Tuple, Any, Optional, Union
 
 from app.logger import get_logger
@@ -14,8 +17,8 @@ class VideoInput:
     """Gestione dell'input video da webcam o file."""
 
     def __init__(self) -> None:
-        """Inizializza la gestione dell'input senza avviare la cattura."""
         self.cap: Optional[cv2.VideoCapture] = None
+        
         self.current_source_type: Optional[str] = None
         self.current_source_value: Union[int, str, None] = None
 
@@ -57,67 +60,58 @@ class VideoInput:
                 self.cap = cv2.VideoCapture(cam_index, cv2.CAP_AVFOUNDATION)
             else:
                 self.cap = cv2.VideoCapture(cam_index)
-        elif source_type == "file" and source_value:
-            self.cap = cv2.VideoCapture(str(source_value))
-        elif source_type == "srt":
-            port = source_value if source_value else 9999
+                
+            if not self.cap.isOpened():
+                raise RuntimeError(f"Impossibile aprire la webcam '{cam_index}'")
+                
+        elif source_type in ("file", "srt"):
+            if source_type == "file" and source_value:
+                url = str(source_value)
+            elif source_type == "srt":
+                port = source_value if source_value else 9999
+                url = f"srt://0.0.0.0:{port}?mode=listener"
+                logger.info(f"Apertura sorgente SRT: {url}")
+            
+            try:
+                self.cap = cv2.VideoCapture(url)
+                if not self.cap.isOpened():
+                    raise RuntimeError(f"Impossibile aprire la sorgente '{source_type}': {url}")
+            except Exception as e:
+                raise RuntimeError(f"Impossibile aprire la sorgente '{source_type}': {e}")
 
-            srt_url = (
-                f"srt://0.0.0.0:{port}"
-                f"?mode=listener"
-                f"&transtype=live"
-                f"&latency=3000"
-                f"&peerlatency=3000"
-                f"&rcvbuf=16777216"
-                f"&sndbuf=16777216"
-                f"&pkt_size=1316"
-                f"&tlpktdrop=0"
-            )
-
-            # Imposta le opzioni globali ffmpeg per evitare blocchi infiniti su OpenCV
-            # timeout e listen_timeout e rw_timeout in microsecondi (es. 2000000 = 2 sec)
-            import os
-            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "timeout;2000000|listen_timeout;2000000|rw_timeout;2000000"
-
-            logger.info(f"Apertura sorgente SRT: {srt_url}")
-            cap = cv2.VideoCapture(srt_url, cv2.CAP_FFMPEG)
-
-            if isinstance(cap, cv2.VideoCapture) and cap.isOpened():
-                # Minimizza la latenza lato OpenCV
-                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-                self.cap = cap
-            else:
-                self.cap = cap
         else:
             raise ValueError("Configurazione sorgente non valida")
 
-        if not self.cap.isOpened():
-            raise RuntimeError(f"Impossibile aprire la sorgente '{source_type}'")
-
     def get_fps(self) -> float:
         """Ritorna gli FPS della sorgente. Default 30.0 se non disponibile."""
-        if self.cap is None:
-            return 30.0
-        fps = self.cap.get(cv2.CAP_PROP_FPS)
-        if fps <= 0 or fps != fps:  # Check for NaN/invalid
-            return 30.0
-        return float(fps)
+        if self.cap is not None:
+            fps = self.cap.get(cv2.CAP_PROP_FPS)
+            if fps > 0 and fps == fps:
+                return float(fps)
+        return 30.0
 
     def get_resolution(self) -> Tuple[int, int]:
         """Ritorna la risoluzione (width, height) della sorgente."""
-        if self.cap is None:
-            return 1920, 1080
-        w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        if w <= 0 or h <= 0:
-            return 1920, 1080
-        return w, h
+        if self.cap is not None:
+            w = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            h = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            if w > 0 and h > 0:
+                return w, h
+        return 1920, 1080
 
-    def read_frame(self) -> Tuple[bool, Any]:
-        """Legge un singolo frame dalla sorgente inizializzata."""
-        if self.cap is None or not self.cap.isOpened():
-            return False, None
-        return self.cap.read()
+    def read_frame(self) -> Tuple[bool, Any, Optional[np.ndarray]]:
+        """Legge un singolo frame dalla sorgente inizializzata e i relativi campioni audio.
+        
+        Returns:
+            Tuple[bool, Any, Optional[np.ndarray]]: (successo, frame_bgr, audio_data)
+        """
+        if self.cap is not None:
+            if not self.cap.isOpened():
+                return False, None, None
+            ret, frame = self.cap.read()
+            return ret, frame, None
+            
+        return False, None, None
 
     def release(self) -> None:
         """Rilascia le risorse della sorgente video."""

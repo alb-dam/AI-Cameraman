@@ -12,6 +12,7 @@ from core.thread_manager import DropFrameQueue, WorkerThread
 from config.settings import SettingsManager
 from core.interfaces import IRuntimeState, IPipeline, IVideoInput, IVideoOutput, IPerformanceMonitor
 from video.output import VideoOutput
+from video.audio_extractor import AudioExtractorThread
 from app.logger import get_logger
 
 logger = get_logger(__name__)
@@ -48,6 +49,7 @@ class ApplicationController:
         self.inference_thread: Optional[WorkerThread] = None
         self.tracking_thread: Optional[WorkerThread] = None
         self.render_thread: Optional[WorkerThread] = None
+        self.audio_extractor: Optional[AudioExtractorThread] = None
 
         self._empty_frames_count = 0
         self._capture_frame_id = 0
@@ -76,13 +78,13 @@ class ApplicationController:
         thread.start()
 
     def _generate_roi_worker(self) -> None:
-        """Worker thread: raccoglie 60 frame equidistanti in 2 minuti e genera la ROI."""
+        """Worker thread: raccoglie i frame e genera la ROI."""
         import time as _time
 
-        target_frames = 60
-        duration_seconds = 20  # 3 minuti
-        # Intervallo tra campionamenti: 1 frame ogni 2 secondi
-        sample_interval = duration_seconds / target_frames  # = 2.0 secondi
+        target_frames = self.settings.get("roi_target_frames")
+        duration_seconds = self.settings.get("roi_duration_seconds")
+        # Intervallo tra campionamenti
+        sample_interval = duration_seconds / target_frames
 
         self._log(f"Genera ROI: raccolta di {target_frames} frame in {duration_seconds}s "
                   f"(1 frame ogni {sample_interval:.1f}s)...")
@@ -139,6 +141,20 @@ class ApplicationController:
             if self.stop_event.is_set():
                 self.video_input.release()
                 return
+                
+            # Start Audio Extractor se siamo su file/srt
+            if source_type in ("file", "srt"):
+                is_srt = source_type == "srt"
+                # Usa il source_path completo per SRT e file
+                url_for_audio = source_path
+                if is_srt:
+                    port = source_path if source_path else 9999
+                    url_for_audio = f"srt://0.0.0.0:{port}"
+                    
+                self.audio_extractor = AudioExtractorThread(
+                    source_url=url_for_audio, is_srt=is_srt
+                )
+                self.audio_extractor.start()
                 
             label = f"file {source_path}" if source_type == "file" else source_type
             self._log(f"Sorgente inizializzata: {label}")
@@ -198,8 +214,12 @@ class ApplicationController:
 
         try:
             self.video_input.release()
+            if self.audio_extractor:
+                self.audio_extractor.stop()
+                self.audio_extractor.join(timeout=1.0)
+                self.audio_extractor = None
         except Exception as e:
-            self._log(f"Errore durante il rilascio di video_input: {e}")
+            self._log(f"Errore durante il rilascio risorse (Video/Audio): {e}")
         finally:
             self._log("Elaborazione chiusa in sicurezza.")
 
@@ -283,10 +303,15 @@ class ApplicationController:
         frame_duration = 1.0 / self.state.input_fps
 
         loop_start = time.time()
-        ret, frame = self.video_input.read_frame()
+        ret, frame, _ = self.video_input.read_frame()
         if not ret:
             self._handle_empty_frame(is_file)
             return
+            
+        audio_chunk = None
+        if self.audio_extractor:
+            # Recuperiamo un chunk audio se disponibile non in modo bloccante
+            audio_chunk = self.audio_extractor.get_next_chunk(block=False)
 
         # Rilevamento cambi di risoluzione mid-stream (es. cambio orientamento senza disconnessione)
         if self.settings.get("source_type") == "srt":
@@ -305,7 +330,7 @@ class ApplicationController:
         # GIL rende gli assegnamenti di reference atomici — no lock needed
         self.state.latest_raw_frame = frame
 
-        self._send_native_passthrough(frame)
+        self._send_native_passthrough(frame, audio_chunk)
             
         self._capture_frame_id += 1
         frame_id = self._capture_frame_id
@@ -314,7 +339,7 @@ class ApplicationController:
         self.perf_monitor.mark_capture(frame_id)
             
         # Push to inference
-        self.q_capture_to_inference.put((frame, frame_id, capture_time))
+        self.q_capture_to_inference.put((frame, audio_chunk, frame_id, capture_time))
 
         if is_file:
             sleep_time = frame_duration - (time.time() - loop_start)
@@ -368,13 +393,13 @@ class ApplicationController:
             return
         time.sleep(0.03)
 
-    def _send_native_passthrough(self, frame: np.ndarray) -> None:
+    def _send_native_passthrough(self, frame: np.ndarray, audio_data: Optional[np.ndarray] = None) -> None:
         """Invia il frame nativo (passthrough) via NDI se l'output nativo è abilitato."""
         if self.state.is_outputting_native:
             native_frame = VideoOutput.resize_and_pad(
                 frame, (self.state.obs_width, self.state.obs_height)
             )
-            self.video_output.send_native_frame(native_frame)
+            self.video_output.send_native_frame(native_frame, audio_data)
 
     def _inference_loop(self) -> None:
         """Thread 2: Inference YOLO alla risoluzione nativa (Queue 1 -> Queue 2).
@@ -383,7 +408,7 @@ class ApplicationController:
         lavorano tutti sul frame nativo della sorgente. Il resize a risoluzione NDI
         avviene una sola volta nel render thread (resize_and_pad finale).
         """
-        raw_frame, frame_id, capture_time = self.q_capture_to_inference.get(timeout=0.1)
+        raw_frame, audio_data, frame_id, capture_time = self.q_capture_to_inference.get(timeout=0.1)
         
         try:
             self.perf_monitor.mark_inference(frame_id)
@@ -394,13 +419,13 @@ class ApplicationController:
             working_frame = raw_frame
             
             det_out = self.pipeline.run_inference(working_frame)
-            self.q_inference_to_tracking.put((working_frame, det_out, frame_id, capture_time))
+            self.q_inference_to_tracking.put((working_frame, audio_data, det_out, frame_id, capture_time))
         except Exception as e:
             self._log(f"Errore in Inferenza: {e}")
 
     def _tracking_loop(self) -> None:
         """Thread 3: Tracking Kalman e Regia (Queue 2 -> Queue 3)."""
-        working_frame, det_out, frame_id, capture_time = self.q_inference_to_tracking.get(timeout=0.1)
+        working_frame, audio_data, det_out, frame_id, capture_time = self.q_inference_to_tracking.get(timeout=0.1)
         
         try:
             metadata = FrameMetadata(
@@ -416,13 +441,13 @@ class ApplicationController:
             self.state.latest_obs_frame = obs_frame
             self.state.latest_debug_frame = debug_frame
                 
-            self.q_tracking_to_render.put((obs_frame, debug_frame, metadata))
+            self.q_tracking_to_render.put((obs_frame, audio_data, debug_frame, metadata))
         except Exception as e:
             self._log(f"Errore in Tracking/Directing: {e}")
 
     def _render_loop(self) -> None:
         """Thread 4: Rendering GUI e output NDI AI (Consume from Queue 3)."""
-        obs_frame, debug_frame, metadata = self.q_tracking_to_render.get(timeout=0.1)
+        obs_frame, audio_data, debug_frame, metadata = self.q_tracking_to_render.get(timeout=0.1)
         
         self.perf_monitor.mark_render(metadata.frame_id, metadata.timestamp)
         
@@ -431,7 +456,7 @@ class ApplicationController:
             ai_frame = VideoOutput.resize_and_pad(
                 obs_frame, (self.state.obs_width, self.state.obs_height)
             )
-            self.video_output.send_ai_frame(ai_frame)
+            self.video_output.send_ai_frame(ai_frame, audio_data)
 
         # GUI preview (indipendente dall'output NDI)
         if self.state.on_frame_ready and debug_frame is not None:

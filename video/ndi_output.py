@@ -5,7 +5,7 @@ import cv2
 from fractions import Fraction
 from typing import Optional
 
-from cyndilib import Sender, VideoSendFrame, FourCC
+from cyndilib import Sender, VideoSendFrame, FourCC, AudioSendFrame
 
 from app.logger import get_logger
 
@@ -32,6 +32,7 @@ class NDISender:
         self._vf: Optional[VideoSendFrame] = None
         self._frame_buffer: Optional[bytearray] = None
         self._frame_view: Optional[memoryview] = None
+        self._af: Optional[AudioSendFrame] = None
 
     def open(self) -> bool:
         """Inizializza e apre il sender NDI. Ritorna True se OK."""
@@ -45,6 +46,12 @@ class NDISender:
             
             self._sender.set_video_frame(self._vf)
             
+            self._af = AudioSendFrame()
+            self._af.sample_rate = 48000
+            self._af.num_channels = 2
+            
+            self._sender.set_audio_frame(self._af)
+            
             # Pre-alloca buffer per i dati frame BGRA
             frame_size = self._vf.get_data_size()
             self._frame_buffer = bytearray(frame_size)
@@ -55,14 +62,17 @@ class NDISender:
             return True
         except Exception as e:
             logger.error(f"Errore apertura NDI Sender '{self.name}': {e}")
+            import traceback
+            traceback.print_exc()
             self._sender = None
             return False
 
-    def send_frame(self, frame: np.ndarray) -> None:
-        """Converte BGR→BGRA e invia il frame via NDI.
+    def send_frame(self, frame: np.ndarray, audio_data: Optional[np.ndarray] = None) -> None:
+        """Converte BGR→BGRA e invia il frame via NDI. Opcionalmente invia audio.
         
         Args:
             frame: Frame OpenCV in formato BGR (H, W, 3) uint8.
+            audio_data: Dati audio float32 di forma (canali, campioni).
         """
         if self._sender is None or frame is None:
             return
@@ -79,7 +89,19 @@ class NDISender:
             self._frame_buffer[:len(raw)] = raw
             
             # Invio asincrono NDI (non blocca il thread)
-            self._sender.write_video_async(self._frame_view)
+            if audio_data is not None:
+                if not hasattr(self, '_audio_logged'):
+                    logger.info(f"NDI Sender '{self.name}': primo chunk audio ricevuto, shape={audio_data.shape}, dtype={audio_data.dtype}")
+                    self._audio_logged = True
+                try:
+                    self._sender.write_video_and_audio(self._frame_view, audio_data)
+                except Exception as e:
+                    logger.error(f"Errore invio A/V NDI '{self.name}': {e}")
+                    # Fallback on just video if AV fails
+                    self._sender.write_video_async(self._frame_view)
+            else:
+                self._sender.write_video_async(self._frame_view)
+                    
         except Exception as e:
             logger.error(f"Errore invio frame NDI '{self.name}': {e}")
 
@@ -95,4 +117,5 @@ class NDISender:
                 self._frame_view = None
                 self._frame_buffer = None
                 self._vf = None
+                self._af = None
                 self._sender = None

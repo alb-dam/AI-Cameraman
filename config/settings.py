@@ -33,6 +33,8 @@ class AppSettings:
     kalman_r_reactive: float = 0.01
     
     last_roi_path: str = "roi.json"
+    roi_target_frames: int = 60
+    roi_duration_seconds: int = 20
     
     # Nomi delle sorgenti NDI
     ndi_ai_name: str = "AI-Cameraman AI"
