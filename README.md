@@ -10,7 +10,7 @@ AI-Cameraman trasforma una qualsiasi sorgente video fissa (webcam, file, stream 
 
 | Funzionalità | Descrizione |
 |---|---|
-| **Rilevamento AI in tempo reale** | YOLOv11 per il rilevamento di giocatori (classe `person`) e pallone (classe `sports ball`) |
+| **Rilevamento AI in tempo reale** | YOLO26 per il rilevamento di giocatori (classe `person`) e pallone (classe `sports ball`) |
 | **Tracking Kalman** | Filtri di Kalman 2D per stabilizzare le posizioni e predire i movimenti tra un'inferenza e l'altra |
 | **Regia virtuale (Director)** | Pan, tilt e zoom automatici con deadzone, smoothing esponenziale e modulazione dinamica della sensibilità |
 | **Zoom dinamico** | Lo zoom si adatta automaticamente allo spread dei giocatori: più sono raggruppati, più si zooma |
