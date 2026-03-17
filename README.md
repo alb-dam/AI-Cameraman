@@ -2,7 +2,7 @@
 
 **Regia virtuale automatica per il basket, basata su intelligenza artificiale.**
 
-AI-Cameraman trasforma una qualsiasi sorgente video fissa (webcam, file, stream SRT) in un'inquadratura dinamica e professionale: rileva i giocatori e il pallone in tempo reale con YOLOv11, ne traccia i movimenti con filtri di Kalman, e genera automaticamente pan, tilt e zoom fluidi per seguire l'azione. L'output viene trasmesso via **NDI** per l'integrazione diretta in OBS Studio, vMix o qualsiasi software compatibile.
+AI-Cameraman trasforma una qualsiasi sorgente video fissa (webcam, file, stream SRT) in un'inquadratura dinamica e professionale: rileva i giocatori e il pallone in tempo reale con YOLO26, ne traccia i movimenti con filtri di Kalman, e genera automaticamente pan, tilt e zoom fluidi per seguire l'azione. L'output viene trasmesso via **NDI** per l'integrazione diretta in OBS Studio, vMix o qualsiasi software compatibile.
 
 ---
 
@@ -84,7 +84,7 @@ AI-Cameraman/
 │       └── log_panel.py     # Pannello log messaggi
 │
 ├── assets/                  # Modelli AI (non versionati in git)
-│   ├── yolo26s.pt           # Modello YOLOv11s (PyTorch)
+│   ├── yolo26s.pt           # Modello YOLO26s (PyTorch)
 │   ├── yolo26s.mlpackage/   # Export CoreML (generato automaticamente su macOS)
 │   └── sam3.pt              # Modello SAM3 per generazione ROI automatica
 │
@@ -126,11 +126,11 @@ pip install -r requirements.txt
 
 ### Modelli AI
 
-I modelli non sono inclusi nel repository (`.gitignore`). Devono essere scaricati e posizionati nella cartella `assets/`:
+I modelli non sono inclusi nel repository (`.gitignore`). sam3.pt deve essere scaricato da https://huggingface.co/facebook/sam3/blob/main/sam3.pt e posizionato nella cartella `assets/`:
 
 | Modello | Utilizzo | Note |
 |---|---|---|
-| `yolo26s.pt` | Rilevamento giocatori e pallone | Viene auto-esportato in CoreML (macOS) o ONNX (Windows) al primo avvio |
+| `yolo26s.pt` | Rilevamento giocatori e pallone | Viene scaricato ed auto-esportato in CoreML (macOS) o ONNX (Windows) al primo avvio |
 | `sam3.pt` | Generazione automatica ROI | Necessario solo per la funzione "Genera ROI" (~3.4 GB) |
 
 ---
