@@ -4,6 +4,7 @@
 # Core files
 *.pt
 *.mp4
+*.png
 *.json
 *.zip
 assets/
