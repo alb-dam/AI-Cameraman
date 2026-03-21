@@ -12,7 +12,8 @@ AI-Cameraman trasforma una qualsiasi sorgente video fissa (webcam, file, stream 
 |---|---|
 | **Rilevamento AI in tempo reale** | YOLO26 per il rilevamento di giocatori (classe `person`) e pallone (classe `sports ball`) |
 | **Tracking Kalman** | Filtri di Kalman 2D per stabilizzare le posizioni e predire i movimenti tra un'inferenza e l'altra |
-| **Regia virtuale (Director)** | Pan, tilt e zoom automatici con deadzone, smoothing esponenziale e modulazione dinamica della sensibilità |
+| **Regia virtuale (Virtual PTZ)** | Modello matematico unificato per pan, tilt e zoom con deadzone spaziale (leash) e smoothing cinematico |
+| **Controllo UI Avanzato** | Regolazione in tempo reale della Regia con slider dedicati per Tolleranza (Deadzone) e Reattività (Inerzia/Smoothing) |
 | **Zoom dinamico** | Lo zoom si adatta automaticamente allo spread dei giocatori: più sono raggruppati, più si zooma |
 | **Dual NDI Output** | Due canali NDI indipendenti: **AI** (inquadratura elaborata) e **Native** (passthrough originale) |
 | **ROI (Region of Interest)** | Maschera poligonale per limitare il rilevamento al solo campo di gioco |
@@ -152,7 +153,8 @@ L'applicazione si avvia con la GUI PySide6 e inizia immediatamente la cattura da
 3. **Regola i parametri** in tempo reale:
    - **Zoom fisso** — livello base di ingrandimento
    - **Zoom dinamico** — intensità dello zoom adattivo basato sullo spread dei giocatori
-   - **Kalman preset** — reattività del tracking (smooth ↔ reactive)
+   - **Tolleranza Movimento** — quanto la camera ignora i micromovimenti (Reattiva ↔ Tollerante)
+   - **Velocità Movimento Regia** — inerzia e fluidità della telecamera (Lento ↔ Rapido)
 4. **Avvia l'elaborazione NDI AI** con il pulsante "Avvia Elaborazione"
 5. **Ricevi l'output** in OBS Studio o vMix aggiungendo una sorgente NDI
 
@@ -182,25 +184,20 @@ La configurazione è persistente nel file `config.json`, modificabile sia dalla 
 
 | Parametro | Default | Descrizione |
 |---|---|---|
-| `fixed_zoom_percent` | `0.0` | Zoom base fisso (0 = nessuno, 100 = 3×) |
-| `dynamic_zoom_percent` | `38.0` | Intensità zoom adattivo (0 = disattivato) |
-| `director_max_spread` | `0.8` | Spread massimo giocatori prima di annullare lo zoom dinamico (0–1) |
-| `director_dynamic_scale` | `1.5` | Moltiplicatore massimo del bonus zoom dinamico |
-| `director_zoom_smoothing` | `0.05` | Smoothing zoom (basso = lento, 1.0 = istantaneo) |
-| `director_zoom_deadzone` | `0.25` | Deadzone sui cambi di zoom (evita hunting) |
-| `director_pan_tilt_deadzone` | `0.1` | Deadzone spaziale pan/tilt (ridotta dinamicamente con lo zoom) |
-| `director_pan_tilt_smoothing` | `0.1` | Smoothing direzionale (ridotto dinamicamente con lo zoom) |
+| `fixed_zoom_percent` | `25.0` | Zoom base fisso (0 = nessuno, 100 = 3×) |
+| `dynamic_zoom_percent` | `50.0` | Intensità zoom adattivo (0 = disattivato) |
+| `director_deadzone_preset_percent` | `25.0` | Tolleranza di movimento del modello PTZ (0 = reattiva, 100 = tollerante) |
+| `director_inertia_preset_percent` | `25.0` | Inerzia del modello PTZ (0 = lento/cinematico, 100 = veloce/rapido) |
 
-### Kalman e YOLO
+> I valori di `min` e `max` per l'interpolazione delle 6 variabili interne (es. `director_zoom_deadzone_min`, `director_zoom_smoothing_max`, ecc.) sono configurabili all'interno di `config.json` o editando direttamente `config/settings.py` qualora si desideri cambiare il comportamento matematico degli slider.
+
+### YOLO (Detection)
 
 | Parametro | Default | Descrizione |
 |---|---|---|
-| `kalman_preset_percent` | `100.0` | Miscela smooth ↔ reactive (0 = liscissimo, 100 = reattivo) |
-| `kalman_q_smooth` / `kalman_r_smooth` | `0.01` / `100.0` | Parametri Q e R per la modalità smooth |
-| `kalman_q_reactive` / `kalman_r_reactive` | `100.0` / `0.01` | Parametri Q e R per la modalità reattiva |
 | `yolo_model` | `"assets/yolo26s.pt"` | Percorso del modello YOLO |
 | `yolo_imgsz` | `640` | Risoluzione di inferenza YOLO |
-| `yolo_inference_interval` | `6` | Inferenza completa ogni N frame (tra i frame: solo predizione Kalman) |
+| `yolo_inference_interval` | `6` | Inferenza completa ogni N frame (il tracking invisibile di Kalman in frame-intermedio è fissato matematicamente sulla massima reattività) |
 
 ### NDI
 
