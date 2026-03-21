@@ -47,7 +47,7 @@ class AppSettings:
     director_zoom_deadzone_max: float = 0.5
     director_pan_tilt_deadzone_min: float = 0.00
     director_pan_tilt_deadzone_max: float = 0.5
-    director_max_spread_min: float = 0.4
+    director_max_spread_min: float = 0.6
     director_max_spread_max: float = 0.8
     
     # Slider Velocità Movimento Regia (0% = Cinematica/Lenta, 100% = Rapida/Scattosa)
