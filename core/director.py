@@ -23,201 +23,168 @@ logger = logging.getLogger(__name__)
 
 
 
-class ValueSmoother:
-    """Applica uno smoothing esponenziale a un valore scalare."""
-
-    def __init__(self, smoothing_factor: float = 0.10, initial_value: float = 1.0) -> None:
-        self.smoothing_factor = smoothing_factor
-        self.current_value = initial_value
-
-    def smooth(self, target_value: float) -> float:
-        """Ammorbidisce la transizione verso il valore target."""
-        self.current_value += (target_value - self.current_value) * self.smoothing_factor
-        return self.current_value
-
-
-class PointSmoother:
-    """Applica uno smoothing esponenziale a una coordinata 2D."""
-
-    def __init__(self, smoothing_factor: float = 0.05) -> None:
-        self.smoothing_factor = smoothing_factor
-        self.current_point: Optional[Tuple[float, float]] = None
-
-    def smooth(self, target_point: Tuple[float, float]) -> Tuple[float, float]:
-        """Ammorbidisce la transizione verso il punto target."""
-        current = self.current_point
-        if current is None:
-            self.current_point = target_point
-            return target_point
-
-        cx, cy = current
-        sx = cx + (target_point[0] - cx) * self.smoothing_factor
-        sy = cy + (target_point[1] - cy) * self.smoothing_factor
-        
-        self.current_point = (sx, sy)
-        return (sx, sy)
-
-
-class DeadzoneFilter:
-    """Filtro che si comporta come un 'guinzaglio' (leash): ignora i micromovimenti all'interno della deadzone, ma segue in modo fluido quando il target esce dalla soglia."""
-
-    def __init__(self, threshold_pct: float = 0.05) -> None:
-        self.threshold_pct = threshold_pct
-        self.stable_point: Optional[Tuple[float, float]] = None
-
-    def filter(self, target_point: Tuple[float, float], reference_length: float) -> Tuple[float, float]:
-        """Se il punto esce dalla soglia, il centro stabile viene 'trascinato' lungo il perimetro della deadzone."""
-        stable = self.stable_point
-        if stable is None:
-            self.stable_point = target_point
-            return target_point
-            
-        spx, spy = stable
-        dx = target_point[0] - spx
-        dy = target_point[1] - spy
-        dist = float(np.hypot(dx, dy))
-        
-        threshold_px = self.threshold_pct * reference_length
-        if dist <= threshold_px:
-            return stable
-            
-        # Comportamento "Leash": trasciniamo il punto stabile così che la distanza dal target sia esattamente threshold_px
-        ratio = threshold_px / dist
-        new_spx = target_point[0] - dx * ratio
-        new_spy = target_point[1] - dy * ratio
-        
-        new_point = (new_spx, new_spy)
-        self.stable_point = new_point
-        return new_point
-
-
-class ScalarDeadzoneFilter:
-    """Filtro a guinzaglio scalare: annulla lo zoom hunting all'interno della soglia, ma segue dolcemente all'esterno."""
-
-    def __init__(self, threshold: float = 0.05) -> None:
-        self.threshold = threshold
-        self.stable_value: Optional[float] = None
-
-    def filter(self, target_value: float) -> float:
-        """Trascina il valore stabile mantenendo una distanza massima pari alla soglia."""
-        stable = self.stable_value
-        if stable is None:
-            self.stable_value = target_value
-            return target_value
-            
-        diff = abs(target_value - stable)
-        
-        if diff <= self.threshold:
-            return stable
-            
-        # Al di fuori della deadzone, agganciamo esattamente il target
-        # (invece di usare un leash) per evitare che lo zoom rimanga permanentemente sfalsato.
-        self.stable_value = target_value
-        return target_value
-
-
-class CameraStrategy:
-    """Strategia di calcolo dello zoom (fisso vs dinamico) dato uno spread di giocatori."""
+class VirtualPTZModel:
+    """Modello matematico unificato per la gestione fluida e cinematica del PTZ Virtuale.
+    Integra Deadzone (Leash) e Smoothing per Pan, Tilt e Zoom in un'unica cascata di equazioni.
+    """
 
     def __init__(self) -> None:
-        self.fixed_zoom: float = 1.0         # 1.0x = nessun zoom
-        self.dynamic_intensity: float = 0.0  # 0.0 = disattivato
-        self._MAX_SPREAD: float = 1000.0     # spread massimo (più alto = attesa prima di zoomare)
-        self._DYNAMIC_SCALE: float = 1.0     # moltiplicatore massimo del bonus dinamico
+        # Stato Corrente (Pan, Tilt, Zoom)
+        self.current_x: Optional[float] = None
+        self.current_y: Optional[float] = None
+        self.current_z: float = 1.0  # Zoom
+        
+        # Leash State (Punto stabile ancorato dalla deadzone)
+        self.stable_x: Optional[float] = None
+        self.stable_y: Optional[float] = None
+        self.stable_z: float = 1.0
+
+        # Parametri Base Regia
+        self.fixed_zoom: float = 1.0
+        self.dynamic_intensity: float = 0.0
+        
+        # Variabili Interpolate dal Controller (valori di default sicuri)
+        self.max_spread: float = 0.6
+        self.dynamic_scale: float = 1.5
+        self.zoom_smoothing: float = 0.1
+        self.zoom_deadzone: float = 0.1
+        self.pan_tilt_deadzone: float = 0.1
+        self.pan_tilt_smoothing: float = 0.1
 
     def set_config(
         self,
         fixed_zoom_percent: float,
         dynamic_zoom_percent: float,
-        max_spread: float = 1000.0,
-        dynamic_scale: float = 1.0
+        max_spread: float = 0.6,
+        dynamic_scale: float = 1.5,
+        zoom_smoothing: float = 0.1,
+        zoom_deadzone: float = 0.1,
+        pan_tilt_deadzone: float = 0.1,
+        pan_tilt_smoothing: float = 0.1
     ) -> None:
-        """Traduce le percentuali UI (0-100) in valori interni."""
+        """Applica i parametri interpolati dal controller ai coefficienti del PTZ."""
         self.fixed_zoom = 1.0 + (fixed_zoom_percent / 50.0)
         self.dynamic_intensity = dynamic_zoom_percent / 100.0
-        self._MAX_SPREAD = max_spread
-        self._DYNAMIC_SCALE = dynamic_scale
+        
+        self.max_spread = max_spread
+        self.dynamic_scale = dynamic_scale
+        self.zoom_smoothing = zoom_smoothing
+        self.zoom_deadzone = zoom_deadzone
+        self.pan_tilt_deadzone = pan_tilt_deadzone
+        self.pan_tilt_smoothing = pan_tilt_smoothing
 
-    def compute_target_zoom(self, player_spread: float) -> float:
-        """Calcola lo zoom target (fisso + bonus dinamico basato sullo spread)."""
-        if self.dynamic_intensity == 0.0 or player_spread < 0:
-            return self.fixed_zoom
+    def step(self, target_x: float, target_y: float, player_spread: float, reference_length: float) -> Tuple[float, float, float]:
+        """Esegue un tick del modello matematico e ritorna (pan_x, tilt_y, zoom_z) correnti."""
+        
+        # --- Equazione 1: Calcolo Target Zoom (Fisso + Dinamico) ---
+        if self.dynamic_intensity > 0.0 and player_spread >= 0:
+            # Normalizziamo lo spread (giocatori distanti = meno bonus, vicini = più bonus)
+            spread_norm = float(np.clip((self.max_spread - player_spread) / self.max_spread, 0.0, 1.0))
+            dynamic_bonus = spread_norm * self.dynamic_intensity * self.dynamic_scale
+            target_z = self.fixed_zoom + dynamic_bonus
+        else:
+            target_z = self.fixed_zoom
 
-        spread_norm = float(np.clip((self._MAX_SPREAD - player_spread) / self._MAX_SPREAD, 0.0, 1.0))
-        dynamic_bonus = spread_norm * self.dynamic_intensity * self._DYNAMIC_SCALE
-        return float(self.fixed_zoom + dynamic_bonus)
+        # Inizializzazione lazy al primo frame utile
+        if self.current_x is None or self.stable_x is None or self.stable_y is None or self.current_y is None:
+            self.current_x = target_x
+            self.stable_x = target_x
+            self.current_y = target_y
+            self.stable_y = target_y
+            self.current_z = target_z
+            self.stable_z = target_z
+
+        cx: float = float(self.current_x)
+        cy: float = float(self.current_y)
+        sx: float = float(self.stable_x)
+        sy: float = float(self.stable_y)
+
+        # --- Equazione 2: Zoom Deadzone ---
+        diff_z = abs(target_z - self.stable_z)
+        if diff_z > self.zoom_deadzone:
+            # Agganciamo esattamente il target z fuori deadzone
+            self.stable_z = target_z
+
+        # --- Equazione 3: Zoom Smoothing ---
+        self.current_z += (self.stable_z - self.current_z) * self.zoom_smoothing
+
+        # --- Equazione 4: Derivazione Parametri Spaziali scalati dallo Zoom ---
+        # Più la telecamera fa zoom, più l'inquadratura è ristretta. Dunque:
+        # A) Diminuiamo la deadzone consentita così la telecamera reagisce prima
+        # B) Diminuiamo lo smoothing perché i movimenti veloci sembreranno amplificati.
+        dynamic_pt_deadzone = self.pan_tilt_deadzone / self.current_z
+        dynamic_pt_smoothing = self.pan_tilt_smoothing / self.current_z
+
+        # --- Equazione 5: Pan/Tilt Deadzone (Filtro Elastico / Leash) ---
+        dx = target_x - sx
+        dy = target_y - sy
+        dist = float(np.hypot(dx, dy))
+        
+        # Convertiamo la deadzone percentuale in pixel rispetto alla diagonale dell'inquadratura
+        threshold_px = dynamic_pt_deadzone * reference_length
+
+        if dist > threshold_px:
+            # Guinzaglio: spostiamo il punto stabile in direzione del target, mantenendolo a distanza 'threshold_px'
+            ratio = threshold_px / dist
+            sx = target_x - dx * ratio
+            sy = target_y - dy * ratio
+            self.stable_x = sx
+            self.stable_y = sy
+
+        # --- Equazione 6: Pan/Tilt Smoothing ---
+        cx += (sx - cx) * dynamic_pt_smoothing
+        cy += (sy - cy) * dynamic_pt_smoothing
+        
+        self.current_x = cx
+        self.current_y = cy
+
+        return (cx, cy, self.current_z)
 
 
 class Director:
-    """Regia virtuale: compone CameraStrategy, filtri di smoothing e GeometryService."""
+    """Regia virtuale: wrapper per eseguire VirtualPTZModel e convertire in crop box."""
 
     def __init__(self) -> None:
-        self.camera_strategy = CameraStrategy()
-        self.zoom_smoother = ValueSmoother(smoothing_factor=0.05, initial_value=1.0)
-        self.zoom_deadzone = ScalarDeadzoneFilter(threshold=0.1) # 5% di deadzone sullo zoom target
-        
-        self.base_pan_tilt_deadzone: float = 0.05
-        self.base_pan_tilt_smoothing: float = 0.03
-        
-        self.deadzone_filter = DeadzoneFilter(threshold_pct=self.base_pan_tilt_deadzone)
-        self.pan_tilt_smoother = PointSmoother(smoothing_factor=self.base_pan_tilt_smoothing) # Diminuito per maggiore stabilità
+        self.ptz_model = VirtualPTZModel()
 
     def set_config(
         self, 
         fixed_zoom_percent: float, 
         dynamic_zoom_percent: float,
-        max_spread: float = 1000.0,
-        dynamic_scale: float = 1.0,
-        zoom_smoothing: float = 0.05,
+        max_spread: float = 0.6,
+        dynamic_scale: float = 1.5,
+        zoom_smoothing: float = 0.1,
         zoom_deadzone: float = 0.1,
-        pan_tilt_deadzone: float = 0.05,
-        pan_tilt_smoothing: float = 0.03
+        pan_tilt_deadzone: float = 0.1,
+        pan_tilt_smoothing: float = 0.1
     ) -> None:
-        """Imposta i parametri dalla UI e configura filtri e deadzone."""
-        self.camera_strategy.set_config(
+        """Imposta i parametri dalla UI nel modello matematico unificato."""
+        self.ptz_model.set_config(
             fixed_zoom_percent, dynamic_zoom_percent,
-            max_spread=max_spread, dynamic_scale=dynamic_scale
+            max_spread=max_spread, dynamic_scale=dynamic_scale,
+            zoom_smoothing=zoom_smoothing, zoom_deadzone=zoom_deadzone,
+            pan_tilt_deadzone=pan_tilt_deadzone, pan_tilt_smoothing=pan_tilt_smoothing
         )
-        
-        self.zoom_smoother.smoothing_factor = zoom_smoothing
-        self.zoom_deadzone.threshold = zoom_deadzone
-        
-        self.base_pan_tilt_deadzone = pan_tilt_deadzone
-        self.base_pan_tilt_smoothing = pan_tilt_smoothing
-        
-        # Le applichiamo come default iniziale
-        self.deadzone_filter.threshold_pct = self.base_pan_tilt_deadzone
-        self.pan_tilt_smoother.smoothing_factor = self.base_pan_tilt_smoothing
 
     def process(
         self, frame: np.ndarray,
         action_center: Tuple[int, int],
         player_spread: float
     ) -> CameraInstruction:
-        """Esegue la regia sul frame corrente."""
-        target_pt = (float(action_center[0]), float(action_center[1]))
+        """Esegue la regia sul frame corrente applicando l'algoritmo matematico e ritornando il crop."""
         h, w = frame.shape[:2]
         reference_length = float(np.hypot(w, h))
-
-        # 1. Calcolo dello zoom attuale
-        raw_target_zoom = self.camera_strategy.compute_target_zoom(player_spread)
-        stable_target_zoom = self.zoom_deadzone.filter(raw_target_zoom)
-        current_zoom = self.zoom_smoother.smooth(stable_target_zoom)
         
-        # 2. Modulazione dinamica della sensibilità di Pan/Tilt in base allo zoom
-        # Più zoom = movimenti più lenti e deadzone più ridotta (per reagire in fretta ma dolcemente)
-        dynamic_pan_smoothing = self.base_pan_tilt_smoothing / current_zoom
-        dynamic_pan_deadzone = self.base_pan_tilt_deadzone / current_zoom
+        # Esecuzione del Modello Matematico Unico PTZ
+        cx, cy, current_zoom = self.ptz_model.step(
+            float(action_center[0]), 
+            float(action_center[1]), 
+            player_spread, 
+            reference_length
+        )
         
-        self.pan_tilt_smoother.smoothing_factor = dynamic_pan_smoothing
-        self.deadzone_filter.threshold_pct = dynamic_pan_deadzone
-        
-        # 3. Filtro Deadzone per rimuovere il tremolio microscopico
-        stable_target = self.deadzone_filter.filter(target_pt, reference_length)
-        # 4. Addolcimento per i movimenti più lenti e decisi
-        smoothed = self.pan_tilt_smoother.smooth(stable_target)
-
-        center_int = (int(smoothed[0]), int(smoothed[1]))
+        center_int = (int(cx), int(cy))
+        # Generazione Crop Virtuale tramite modulo di Geometria
         crop_box = GeometryService.calculate_crop_region(center_int, current_zoom, w, h)
 
         x1, y1, x2, y2 = crop_box

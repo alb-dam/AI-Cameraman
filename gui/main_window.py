@@ -91,7 +91,8 @@ class MainWindow(QMainWindow):
         cp.debug_toggled.connect(self._on_debug_toggled)
         cp.fixed_zoom_changed.connect(lambda v: self.settings.set("fixed_zoom_percent", float(v), save_to_disk=False))
         cp.dynamic_zoom_changed.connect(lambda v: self.settings.set("dynamic_zoom_percent", float(v), save_to_disk=False))
-        cp.kalman_changed.connect(lambda v: self.settings.set("kalman_preset_percent", float(v), save_to_disk=False))
+        cp.deadzone_changed.connect(lambda v: self.settings.set("director_deadzone_preset_percent", float(v), save_to_disk=False))
+        cp.inertia_changed.connect(lambda v: self.settings.set("director_inertia_preset_percent", float(v), save_to_disk=False))
         cp.load_roi_requested.connect(self._on_load_roi)
         cp.create_roi_requested.connect(self._on_create_roi)
         cp.save_roi_requested.connect(self._on_save_roi)
@@ -124,7 +125,8 @@ class MainWindow(QMainWindow):
             debug=bool(self.settings.get("debug_mode")),
             fixed_zoom=int(self.settings.get("fixed_zoom_percent")),
             dynamic_zoom=int(self.settings.get("dynamic_zoom_percent")),
-            kalman=int(self.settings.get("kalman_preset_percent")),
+            deadzone=int(self.settings.get("director_deadzone_preset_percent")),
+            inertia=int(self.settings.get("director_inertia_preset_percent")),
         )
 
     def _on_source_changed(self, source_data: tuple) -> None:

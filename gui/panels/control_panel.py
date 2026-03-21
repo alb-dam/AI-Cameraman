@@ -22,7 +22,8 @@ class ControlPanel(QWidget):
     native_toggled = Signal(bool)
     fixed_zoom_changed = Signal(int)
     dynamic_zoom_changed = Signal(int)
-    kalman_changed = Signal(int)
+    deadzone_changed = Signal(int)
+    inertia_changed = Signal(int)
     load_roi_requested = Signal()
     create_roi_requested = Signal()
     save_roi_requested = Signal()
@@ -93,11 +94,17 @@ class ControlPanel(QWidget):
         self.dynamic_zoom_slider.setRange(0, 100)
         panel.addWidget(self.dynamic_zoom_slider)
 
-        panel.addWidget(QLabel("Reattività Kalman (Lento -> Reattivo)"))
-        self.kalman_slider = QSlider(Qt.Horizontal)
-        self.kalman_slider.setRange(0, 100)
-        self.kalman_slider.setTickPosition(QSlider.NoTicks)
-        panel.addWidget(self.kalman_slider)
+        panel.addWidget(QLabel("Tolleranza Movimento (Reattiva -> Tollerante)"))
+        self.deadzone_slider = QSlider(Qt.Horizontal)
+        self.deadzone_slider.setRange(0, 100)
+        self.deadzone_slider.setTickPosition(QSlider.NoTicks)
+        panel.addWidget(self.deadzone_slider)
+        
+        panel.addWidget(QLabel("Velocità Movimento Regia (Lento -> Rapido)"))
+        self.inertia_slider = QSlider(Qt.Horizontal)
+        self.inertia_slider.setRange(0, 100)
+        self.inertia_slider.setTickPosition(QSlider.NoTicks)
+        panel.addWidget(self.inertia_slider)
 
     def _setup_roi_controls(self, panel: QVBoxLayout) -> None:
         """Pulsanti per gestione area ROI."""
@@ -126,7 +133,8 @@ class ControlPanel(QWidget):
         self.native_cb.toggled.connect(self.native_toggled.emit)
         self.fixed_zoom_slider.valueChanged.connect(self.fixed_zoom_changed.emit)
         self.dynamic_zoom_slider.valueChanged.connect(self.dynamic_zoom_changed.emit)
-        self.kalman_slider.valueChanged.connect(self.kalman_changed.emit)
+        self.deadzone_slider.valueChanged.connect(self.deadzone_changed.emit)
+        self.inertia_slider.valueChanged.connect(self.inertia_changed.emit)
         self.btn_load_roi.clicked.connect(self.load_roi_requested.emit)
         self.btn_create_roi.clicked.connect(self.create_roi_requested.emit)
         self.btn_save_roi.clicked.connect(self.save_roi_requested.emit)
@@ -178,19 +186,22 @@ class ControlPanel(QWidget):
         self.source_combo.blockSignals(False)
 
     def restore_config(self, debug: bool, fixed_zoom: int,
-                       dynamic_zoom: int, kalman: int) -> None:
+                       dynamic_zoom: int, deadzone: int,
+                       inertia: int) -> None:
         """Ripristina i valori salvati della configurazione nei widget.
 
         Args:
             debug: stato checkbox debug.
             fixed_zoom: valore slider zoom fisso (0-100).
             dynamic_zoom: valore slider zoom dinamico (0-100).
-            kalman: valore slider preset Kalman (0-100).
+            deadzone: valore slider deadzone (0-100).
+            inertia: valore slider inerzia (0-100).
         """
         self.debug_cb.setChecked(debug)
         self.fixed_zoom_slider.setValue(fixed_zoom)
         self.dynamic_zoom_slider.setValue(dynamic_zoom)
-        self.kalman_slider.setValue(kalman)
+        self.deadzone_slider.setValue(deadzone)
+        self.inertia_slider.setValue(inertia)
 
     def set_file_button_visible(self, visible: bool) -> None:
         """Mostra/nasconde il pulsante di selezione file."""

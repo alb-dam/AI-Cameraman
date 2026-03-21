@@ -84,27 +84,50 @@ class FramePipeline:
 
     def _apply_detector_config(self) -> None:
         """Applica gli aggiornamenti dinamici in tempo reale per YOLO/Kalman dai settings."""
-        percent = float(self.settings.get("kalman_preset_percent")) / 100.0
-        
-        q_smooth = float(self.settings.get("kalman_q_smooth"))
-        r_smooth = float(self.settings.get("kalman_r_smooth"))
-        q_reactive = float(self.settings.get("kalman_q_reactive"))
-        r_reactive = float(self.settings.get("kalman_r_reactive"))
-
-        q_std = q_smooth + (q_reactive - q_smooth) * percent
-        r_std = r_smooth + (r_reactive - r_smooth) * percent
+        # Filtro sempre il più reattivo possibile
+        q_std = 100.0
+        r_std = 0.01
 
         self.detector.set_config(q_std, r_std, int(self.settings.get("yolo_imgsz")))
 
     def _apply_director_config(self) -> None:
         """Applica gli aggiornamenti dinamici in tempo reale per la regia dai settings."""
+        deadzone_pct = float(self.settings.get("director_deadzone_preset_percent")) / 100.0
+        inertia_pct = float(self.settings.get("director_inertia_preset_percent")) / 100.0
+
+        # Interpola i valori Tolleranza (Deadzone)
+        z_dz_min = float(self.settings.get("director_zoom_deadzone_min"))
+        z_dz_max = float(self.settings.get("director_zoom_deadzone_max"))
+        zoom_deadzone = z_dz_min + (z_dz_max - z_dz_min) * deadzone_pct
+
+        pt_dz_min = float(self.settings.get("director_pan_tilt_deadzone_min"))
+        pt_dz_max = float(self.settings.get("director_pan_tilt_deadzone_max"))
+        pan_tilt_deadzone = pt_dz_min + (pt_dz_max - pt_dz_min) * deadzone_pct
+
+        spread_min = float(self.settings.get("director_max_spread_min"))
+        spread_max = float(self.settings.get("director_max_spread_max"))
+        max_spread = spread_min + (spread_max - spread_min) * deadzone_pct
+        
+        # Interpola i valori Velocità (Inerzia/Smoothing)
+        z_sm_min = float(self.settings.get("director_zoom_smoothing_min"))
+        z_sm_max = float(self.settings.get("director_zoom_smoothing_max"))
+        zoom_smoothing = z_sm_min + (z_sm_max - z_sm_min) * inertia_pct
+
+        pt_sm_min = float(self.settings.get("director_pan_tilt_smoothing_min"))
+        pt_sm_max = float(self.settings.get("director_pan_tilt_smoothing_max"))
+        pan_tilt_smoothing = pt_sm_min + (pt_sm_max - pt_sm_min) * inertia_pct
+
+        scale_min = float(self.settings.get("director_dynamic_scale_min"))
+        scale_max = float(self.settings.get("director_dynamic_scale_max"))
+        dynamic_scale = scale_min + (scale_max - scale_min) * inertia_pct
+
         self.director.set_config(
             float(self.settings.get("fixed_zoom_percent")),
             float(self.settings.get("dynamic_zoom_percent")),
-            max_spread=float(self.settings.get("director_max_spread")),
-            dynamic_scale=float(self.settings.get("director_dynamic_scale")),
-            zoom_smoothing=float(self.settings.get("director_zoom_smoothing")),
-            zoom_deadzone=float(self.settings.get("director_zoom_deadzone")),
-            pan_tilt_deadzone=float(self.settings.get("director_pan_tilt_deadzone")),
-            pan_tilt_smoothing=float(self.settings.get("director_pan_tilt_smoothing"))
+            max_spread=max_spread,
+            dynamic_scale=dynamic_scale,
+            zoom_smoothing=zoom_smoothing,
+            zoom_deadzone=zoom_deadzone,
+            pan_tilt_deadzone=pan_tilt_deadzone,
+            pan_tilt_smoothing=pan_tilt_smoothing
         )
