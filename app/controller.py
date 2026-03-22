@@ -288,17 +288,13 @@ class ApplicationController:
             self._handle_empty_frame(is_file)
             return
 
-        # Rilevamento cambi di risoluzione mid-stream (es. cambio orientamento senza disconnessione)
+        # Rilevamento cambi di risoluzione mid-stream (es. cambio orientamento)
         if self.settings.get("source_type") == "srt":
             if self._last_srt_shape is None:
                 self._last_srt_shape = frame.shape
             elif self._last_srt_shape != frame.shape:
-                self._log(f"Rilevato cambio RTP in-stream ({self._last_srt_shape} -> {frame.shape}). Forzo riavvio listener...")
-                self._last_srt_shape = None
-                self._last_reconnect_time = 0.0  # Bypass cooldown
-                self._empty_frames_count = 1
-                self._handle_empty_frame(is_file)
-                return
+                self._log(f"Rilevato cambio RTP in-stream ({self._last_srt_shape} -> {frame.shape}). Adatto la pipeline...")
+                self._last_srt_shape = frame.shape
 
         self._empty_frames_count = 0
         

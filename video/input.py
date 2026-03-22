@@ -75,9 +75,9 @@ class VideoInput:
             )
 
             # Imposta le opzioni globali ffmpeg per evitare blocchi infiniti su OpenCV
-            # timeout e listen_timeout e rw_timeout in microsecondi (es. 2000000 = 2 sec)
+            # timeout e rw_timeout in microsecondi a 4s (per superare latency=3000), listen_timeout a 1s
             import os
-            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "timeout;2000000|listen_timeout;2000000|rw_timeout;2000000"
+            os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "timeout;4000000|listen_timeout;1000000|rw_timeout;4000000"
 
             logger.info(f"Apertura sorgente SRT: {srt_url}")
             cap = cv2.VideoCapture(srt_url, cv2.CAP_FFMPEG)
