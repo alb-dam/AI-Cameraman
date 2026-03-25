@@ -37,26 +37,26 @@ class AppSettings:
     # director_max_spread: float = 0.6
     
     # --- Nuovi slider per Tolleranza (Deadzone) e Reattività Camera (Inerzia/Smoothing) ---
-    fixed_zoom_percent: float = 25.0
-    dynamic_zoom_percent: float = 50.0
-    director_deadzone_preset_percent: float = 25.0
-    director_inertia_preset_percent: float = 25.0
+    fixed_zoom_percent: float = 0.0
+    dynamic_zoom_percent: float = 80.0
+    director_deadzone_preset_percent: float = 40.0
+    director_inertia_preset_percent: float = 15.0
     
     # Slider Tolleranza Movimento (0% = Reattiva/Tight, 100% = Tollerante/Loose)
     director_zoom_deadzone_min: float = 0.00
-    director_zoom_deadzone_max: float = 0.5
+    director_zoom_deadzone_max: float = 1.00
     director_pan_tilt_deadzone_min: float = 0.00
-    director_pan_tilt_deadzone_max: float = 0.5
-    director_max_spread_min: float = 0.6
-    director_max_spread_max: float = 0.8
+    director_pan_tilt_deadzone_max: float = 0.50
+    director_max_spread_min: float = 0.60
+    director_max_spread_max: float = 1.00
     
     # Slider Velocità Movimento Regia (0% = Cinematica/Lenta, 100% = Rapida/Scattosa)
     director_zoom_smoothing_min: float = 0.00
-    director_zoom_smoothing_max: float = 0.5
+    director_zoom_smoothing_max: float = 0.50
     director_pan_tilt_smoothing_min: float = 0.00
-    director_pan_tilt_smoothing_max: float = 0.5
-    director_dynamic_scale_min: float = 0.8
-    director_dynamic_scale_max: float = 3.0
+    director_pan_tilt_smoothing_max: float = 1.00
+    director_dynamic_scale_min: float = 1.00
+    director_dynamic_scale_max: float = 3.00
 
 
 class SettingsManager:

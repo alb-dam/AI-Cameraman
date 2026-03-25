@@ -5,6 +5,8 @@
 torch==2.7.1
 torchvision==0.22.1 
 ultralytics
+clip @ git+https://github.com/ultralytics/CLIP.git
+timm
 
 # General dependencies
 PySide6
