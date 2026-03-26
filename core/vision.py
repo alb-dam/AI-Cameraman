@@ -8,7 +8,7 @@ Architettura interna:
 
 import numpy as np
 from dataclasses import dataclass, field
-from typing import List, Dict, Any, Tuple, Optional
+from typing import List, Dict, Any, Tuple, Optional, Callable
 
 from core.yolo_model import YoloDetector
 from core.tracking import ActionCenterCalculator
@@ -168,6 +168,59 @@ class KalmanTracker:
         return best_id
 
 
+class OutlierFilter:
+    """Filtra giocatori outlier usando la Median Absolute Deviation (MAD).
+
+    I giocatori la cui coordinata X è troppo distante dalla mediana del gruppo
+    vengono esclusi dal calcolo del baricentro e dello spread, evitando che
+    figure lontane (allenatore, raccattapalle) influenzino l'inquadratura.
+    """
+
+    DEFAULT_K = 3.0  # Moltiplicatore MAD: 3.0 ≈ ampio margine statistico
+
+    @classmethod
+    def filter_outliers(
+        cls,
+        players: List[TrackedObject],
+        k: float = DEFAULT_K,
+    ) -> List[TrackedObject]:
+        """Rimuove outlier spaziali dalla lista giocatori.
+
+        Algoritmo:
+            1. Calcola mediana X di tutti i centri
+            2. Calcola MAD = mediana(|xi - mediana|)
+            3. Scarta i giocatori con |xi - mediana| > k * MAD
+            4. Safeguard: se restano < 2 giocatori, ritorna la lista originale
+
+        Args:
+            players: giocatori tracciati.
+            k: moltiplicatore per la soglia MAD.
+
+        Returns:
+            Lista filtrata (o originale se il filtro è troppo aggressivo).
+        """
+        if len(players) < 3:
+            return players
+
+        xs = np.array([p.center[0] for p in players], dtype=np.float64)
+        median_x = float(np.median(xs))
+        deviations = np.abs(xs - median_x)
+        mad = float(np.median(deviations))
+
+        # Se MAD ≈ 0, i giocatori sono quasi tutti nella stessa posizione X → nessun outlier
+        if mad < 1.0:
+            return players
+
+        threshold = k * mad
+        filtered = [p for p, dev in zip(players, deviations) if dev <= threshold]
+
+        # Safeguard: non lasciare mai meno di 2 giocatori
+        if len(filtered) < 2:
+            return players
+
+        return filtered
+
+
 class Detector:
     """Façade che compone rilevamento, tracking e centro d'azione."""
 
@@ -186,8 +239,20 @@ class Detector:
         self.tracker.set_config(q_std, r_std)
         self.yolo_imgsz = yolo_imgsz
 
-    def process(self, frame: np.ndarray, predict_only: bool = False) -> DetectionResult:
-        """Esegue rilevamento AI, tracking e computo del centro d'azione."""
+    def process(
+        self,
+        frame: np.ndarray,
+        predict_only: bool = False,
+        detection_filter: Optional[Callable[[List[Detection]], List[Detection]]] = None,
+    ) -> DetectionResult:
+        """Esegue rilevamento AI, tracking e computo del centro d'azione.
+
+        Args:
+            frame: frame BGR da analizzare.
+            predict_only: se True, salta YOLO e usa solo predizione Kalman.
+            detection_filter: callback opzionale per filtrare le detection grezze
+                prima del tracking (es. filtro piedi ROI). Firma: (List[Detection]) -> List[Detection].
+        """
         h, w = frame.shape[:2]
         frame_center = (w // 2, h // 2)
 
@@ -196,17 +261,22 @@ class Detector:
             raw_ball = None
         else:
             raw_players, raw_ball = self.yolo.detect(frame, imgsz=self.yolo_imgsz)
-            
+            # Filtro post-detection (es. piedi dentro/fuori ROI)
+            if detection_filter is not None:
+                raw_players = detection_filter(raw_players)
+
         filtered_players, filtered_ball = self.tracker.update(raw_players, raw_ball, predict_only=predict_only)
         
-        computed_center = self.center_calc.compute_center(filtered_players, filtered_ball)
+        # Filtro outlier: rimuove giocatori spazialmente isolati (es. allenatore lontano)
+        valid_players = OutlierFilter.filter_outliers(filtered_players)
+        
+        computed_center = self.center_calc.compute_center(valid_players, filtered_ball)
         if computed_center is not None:
             self.last_action_center = computed_center
         
         action_center = self.last_action_center if self.last_action_center is not None else frame_center
         
-        
-        current_spread = self._compute_player_spread(filtered_players, w, h)
+        current_spread = self._compute_player_spread(valid_players, w, h)
         if current_spread >= 0.0:
             self.last_player_spread = current_spread
         spread = self.last_player_spread

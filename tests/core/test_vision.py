@@ -1,6 +1,7 @@
 import pytest
 import numpy as np
-from core.vision import SimpleKalman, KalmanTracker
+from core.vision import SimpleKalman, KalmanTracker, OutlierFilter
+from core.models import TrackedObject
 
 class TestSimpleKalman:
     def test_initialization(self):
@@ -98,3 +99,51 @@ class TestKalmanTracker:
         pred_players, pred_ball = t.update([], None, predict_only=True)
         assert len(pred_players) == 1
         assert pred_ball is not None
+
+
+def _make_tracked(pid: int, cx: int, cy: int) -> TrackedObject:
+    return TrackedObject(object_id=pid, center=(cx, cy), raw_box=(cx-10, cy-20, cx+10, cy+20))
+
+
+class TestOutlierFilter:
+    def test_no_outliers_close_group(self):
+        """Giocatori vicini → nessuno è outlier."""
+        players = [_make_tracked(i, 100 + i * 20, 200) for i in range(5)]
+        result = OutlierFilter.filter_outliers(players)
+        assert len(result) == 5
+
+    def test_outlier_removed(self):
+        """Un giocatore molto lontano → rimosso."""
+        players = [
+            _make_tracked(0, 100, 200),
+            _make_tracked(1, 120, 200),
+            _make_tracked(2, 110, 200),
+            _make_tracked(3, 130, 200),
+            _make_tracked(4, 1800, 200),  # Molto lontano (allenatore)
+        ]
+        result = OutlierFilter.filter_outliers(players)
+        assert len(result) == 4
+        assert all(p.object_id != 4 for p in result)
+
+    def test_safeguard_too_few_remain(self):
+        """Se il filtro lascerebbe < 2, ritorna tutti."""
+        players = [
+            _make_tracked(0, 100, 200),
+            _make_tracked(1, 500, 200),
+            _make_tracked(2, 900, 200),
+        ]
+        result = OutlierFilter.filter_outliers(players)
+        # I 3 giocatori sono abbastanza equidistanti da non essere outlier,
+        # oppure il safeguard evita di filtrare troppo
+        assert len(result) >= 2
+
+    def test_small_list_passthrough(self):
+        """Con meno di 3 giocatori, nessun filtraggio."""
+        players = [_make_tracked(0, 100, 200), _make_tracked(1, 1800, 200)]
+        result = OutlierFilter.filter_outliers(players)
+        assert len(result) == 2
+
+    def test_empty_list(self):
+        """Lista vuota → lista vuota."""
+        result = OutlierFilter.filter_outliers([])
+        assert len(result) == 0

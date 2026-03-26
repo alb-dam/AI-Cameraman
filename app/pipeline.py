@@ -40,9 +40,16 @@ class FramePipeline:
         run_full_inference = (self.state.yolo_frame_counter % interval) == 0
         self.state.yolo_frame_counter += 1
 
-        ai_frame = self.roi_manager.apply_roi(frame)
+        # YOLO riceve il frame completo per rilevare i giocatori interi
+        # (anche quelli al bordo della ROI). Il filtraggio avviene post-detection tramite callback.
+        h, w = frame.shape[:2]
+        feet_filter = lambda dets: self.roi_manager.filter_detections_by_feet(dets, w, h)
         
-        det_out = self.detector.process(ai_frame, predict_only=not run_full_inference)
+        det_out = self.detector.process(
+            frame,
+            predict_only=not run_full_inference,
+            detection_filter=feet_filter,
+        )
         return det_out
 
     def run_tracking_and_directing(self, frame: np.ndarray, det_out: Any, metadata: FrameMetadata) -> Tuple[np.ndarray, np.ndarray]:

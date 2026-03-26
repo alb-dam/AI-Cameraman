@@ -1,10 +1,11 @@
 """Protocolli (Interfacce) per Dependency Injection. Definiscono i contratti applicativi."""
 
 from typing import Protocol, Any, Tuple, Optional, Callable, List, Union
+
 import numpy as np
 
 from config.settings import SettingsManager
-from core.models import DetectionResult, CameraInstruction, FrameMetadata
+from core.models import Detection, DetectionResult, CameraInstruction, FrameMetadata
 
 
 class IPerformanceMonitor(Protocol):
@@ -41,7 +42,8 @@ class IVideoOutput(Protocol):
 
 class IDetector(Protocol):
     def set_config(self, q_std: float, r_std: float, yolo_imgsz: int = 640) -> None: ...
-    def process(self, frame: np.ndarray, predict_only: bool = False) -> DetectionResult: ...
+    def process(self, frame: np.ndarray, predict_only: bool = False,
+                detection_filter: Optional[Callable[[List[Detection]], List[Detection]]] = None) -> DetectionResult: ...
 
 
 class IDirector(Protocol):
@@ -68,6 +70,7 @@ class IROIManager(Protocol):
     def finalize_roi(self) -> None: ...
     def load_roi(self, filepath: str) -> bool: ...
     def save_roi(self, filepath: str) -> bool: ...
+    def filter_detections_by_feet(self, detections: List[Detection], frame_w: int, frame_h: int) -> List[Detection]: ...
     def generate_roi_from_video(self, frames: List[np.ndarray], save_path: str) -> bool: ...
 
 

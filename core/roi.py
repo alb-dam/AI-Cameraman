@@ -13,7 +13,7 @@ import cv2
 import numpy as np
 
 from core.geometry import GeometryService
-from core.models import ROI
+from core.models import ROI, Detection
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +129,39 @@ class ROIManager:
             logger.debug("ROI mask cache rigenerata per dimensione %dx%d", w, h)
         
         return GeometryService.apply_precomputed_mask(frame, self._cached_mask)
+
+    def filter_detections_by_feet(
+        self,
+        detections: List[Detection],
+        frame_w: int,
+        frame_h: int,
+    ) -> List[Detection]:
+        """Filtra le detection in base alla posizione dei piedi rispetto alla ROI.
+
+        - Piedi dentro la ROI → detection inclusa (anche se il busto esce)
+        - Piedi fuori dalla ROI → detection esclusa (anche se il busto è dentro)
+
+        Il punto 'piedi' è definito come (centro_x della bbox, bordo inferiore y2).
+        Se la ROI non è valida o si è in modalità editing, tutte le detection passano.
+        """
+        if self.editing_mode or not self.is_valid or self.roi.polygon is None:
+            return detections
+
+        # Converti il poligono normalizzato in coordinate pixel assolute
+        abs_polygon = (self.roi.polygon * [frame_w, frame_h]).astype(np.float32)
+
+        filtered: List[Detection] = []
+        for det in detections:
+            x1, y1, x2, y2 = det.box
+            foot_x = (x1 + x2) / 2.0
+            foot_y = float(y2)  # bordo inferiore = piedi
+
+            # pointPolygonTest: > 0 dentro, = 0 sul bordo, < 0 fuori
+            dist = cv2.pointPolygonTest(abs_polygon, (foot_x, foot_y), measureDist=False)
+            if dist >= 0:
+                filtered.append(det)
+
+        return filtered
 
     def draw_roi(
         self,
