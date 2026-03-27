@@ -8,7 +8,7 @@ import sys
 import numpy as np
 
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget,
-                               QHBoxLayout, QVBoxLayout, QGroupBox,
+                               QHBoxLayout, QVBoxLayout,
                                QFileDialog, QPushButton)
 from PySide6.QtCore import Signal, QObject
 from PySide6.QtGui import QCloseEvent
@@ -35,7 +35,8 @@ class MainWindow(QMainWindow):
         self.bridge = UIBridge()
 
         self.setWindowTitle("AI-Cameraman")
-        self.resize(1000, 600)
+        self.resize(640, 621)
+        self.setMinimumSize(640, 360)  # 16:9 aspect ratio minimo
 
         self._setup_ui()
         self._connect_signals()
@@ -43,23 +44,24 @@ class MainWindow(QMainWindow):
     def _setup_ui(self) -> None:
         main_widget = QWidget()
         self.setCentralWidget(main_widget)
-        main_layout = QHBoxLayout(main_widget)
+        main_layout = QVBoxLayout(main_widget)
+        main_layout.setSpacing(4)
+        main_layout.setContentsMargins(4, 4, 4, 4)
 
-        self.control_panel = control_panel_run()
-        main_layout.addWidget(self.control_panel, stretch=1)
-
-        right_group = QGroupBox("Preview e Log")
-        right_layout = QVBoxLayout()
-        right_group.setLayout(right_layout)
-        main_layout.addWidget(right_group, stretch=3)
-
+        # Preview video – occupa tutto lo spazio disponibile
         self.preview_panel = preview_panel_run()
-        right_layout.addWidget(self.preview_panel)
+        main_layout.addWidget(self.preview_panel, stretch=1)
 
-        self._setup_action_buttons(right_layout)
+        # Pulsanti azione
+        self._setup_action_buttons(main_layout)
 
+        # Controlli compatti
+        self.control_panel = control_panel_run()
+        main_layout.addWidget(self.control_panel)
+
+        # Log in basso
         self.log_panel = log_panel_run()
-        right_layout.addWidget(self.log_panel)
+        main_layout.addWidget(self.log_panel)
 
     def _setup_action_buttons(self, layout: QVBoxLayout) -> None:
         """Crea i pulsanti Avvia/Ferma Elaborazione sotto la preview."""

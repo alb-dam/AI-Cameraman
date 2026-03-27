@@ -1,14 +1,18 @@
-"""Pannello di controllo sinistro: sorgente, debug, slider AI, ROI."""
+"""Pannello di controllo compatto: sorgente, slider AI, ROI, output.
+
+Layout a griglia orizzontale, ottimizzato per finestre piccole (640×360).
+"""
 
 from typing import Any, Dict, List, Tuple, Union
 
-from PySide6.QtWidgets import (QWidget, QVBoxLayout, QPushButton, QComboBox,
-                               QCheckBox, QSlider, QLabel, QGroupBox)
+from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
+                               QComboBox, QCheckBox, QSlider, QLabel,
+                               QGroupBox, QGridLayout, QSizePolicy)
 from PySide6.QtCore import Qt, Signal
 
 
 class ControlPanel(QWidget):
-    """Colonna sinistra con tutti i controlli dell'applicazione.
+    """Pannello controlli compatto con layout a righe orizzontali.
 
     Emette segnali puri, non conosce Backend né ConfigManager.
     """
@@ -40,87 +44,78 @@ class ControlPanel(QWidget):
     # ── Setup UI ────────────────────────────────────────────────────────
 
     def _setup_ui(self) -> None:
-        """Costruisce il layout verticale con tutti i gruppi di controlli."""
+        """Costruisce il layout compatto a righe orizzontali."""
         layout = QVBoxLayout(self)
-        group = QGroupBox("Controlli")
-        panel = QVBoxLayout()
-        group.setLayout(panel)
-        layout.addWidget(group)
+        layout.setContentsMargins(4, 4, 4, 4)
+        layout.setSpacing(4)
 
-        self._setup_source_controls(panel)
-        self._setup_ai_sliders(panel)
-        self._setup_roi_controls(panel)
-        self._setup_output_toggles(panel)
-        panel.addStretch()
-
-    def _setup_source_controls(self, panel: QVBoxLayout) -> None:
-        """Menu a tendina sorgente video e pulsante file."""
-        panel.addWidget(QLabel("Sorgente Video:"))
+        # Riga 1: Sorgente + Output checkboxes
+        row1 = QHBoxLayout()
+        row1.setSpacing(8)
+        row1.addWidget(QLabel("Sorgente:"))
         self.source_combo = QComboBox()
-        panel.addWidget(self.source_combo)
-
-        self.file_btn = QPushButton("Apri File Video")
+        self.source_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        row1.addWidget(self.source_combo)
+        self.file_btn = QPushButton("Apri File")
         self.file_btn.setVisible(False)
-        panel.addWidget(self.file_btn)
+        row1.addWidget(self.file_btn)
 
-    def _setup_output_toggles(self, panel: QVBoxLayout) -> None:
-        """Gruppo checkbox per Debug, Preview e NDI Nativo."""
-        output_group = QGroupBox("Output")
-        output_layout = QVBoxLayout()
-        output_group.setLayout(output_layout)
-        panel.addWidget(output_group)
-
-        self.debug_cb = QCheckBox("Modalità Debug (Mostra FPS)")
-        output_layout.addWidget(self.debug_cb)
-
-        self.preview_cb = QCheckBox("Mostra Preview")
+        row1.addSpacing(12)
+        self.debug_cb = QCheckBox("Debug")
+        self.debug_cb.setToolTip("Modalità Debug (Mostra FPS)")
+        row1.addWidget(self.debug_cb)
+        self.preview_cb = QCheckBox("Preview")
         self.preview_cb.setChecked(True)
         self.preview_cb.setToolTip("Disattiva per migliorare le performance durante lo streaming")
-        output_layout.addWidget(self.preview_cb)
-
-        self.native_cb = QCheckBox("NDI Output Nativo")
+        row1.addWidget(self.preview_cb)
+        self.native_cb = QCheckBox("NDI Nativo")
         self.native_cb.setToolTip("Attiva/disattiva l'invio del frame nativo (passthrough) via NDI")
-        output_layout.addWidget(self.native_cb)
+        row1.addWidget(self.native_cb)
+        layout.addLayout(row1)
 
-    def _setup_ai_sliders(self, panel: QVBoxLayout) -> None:
-        """Slider per zoom fisso, zoom dinamico e preset Kalman."""
-        panel.addWidget(QLabel("Zoom Fisso (1x - 3x)"))
+        # Riga 2: Slider (griglia 2×2)
+        slider_grid = QGridLayout()
+        slider_grid.setSpacing(4)
+
+        slider_grid.addWidget(QLabel("Zoom Fisso:"), 0, 0)
         self.fixed_zoom_slider = QSlider(Qt.Horizontal)
         self.fixed_zoom_slider.setRange(0, 100)
-        panel.addWidget(self.fixed_zoom_slider)
+        slider_grid.addWidget(self.fixed_zoom_slider, 0, 1)
 
-        panel.addWidget(QLabel("Intensità Zoom Dinamico"))
+        slider_grid.addWidget(QLabel("Zoom Dinamico:"), 0, 2)
         self.dynamic_zoom_slider = QSlider(Qt.Horizontal)
         self.dynamic_zoom_slider.setRange(0, 100)
-        panel.addWidget(self.dynamic_zoom_slider)
+        slider_grid.addWidget(self.dynamic_zoom_slider, 0, 3)
 
-        panel.addWidget(QLabel("Tolleranza Movimento (Reattiva -> Tollerante)"))
+        slider_grid.addWidget(QLabel("Tolleranza:"), 1, 0)
         self.deadzone_slider = QSlider(Qt.Horizontal)
         self.deadzone_slider.setRange(0, 100)
-        self.deadzone_slider.setTickPosition(QSlider.NoTicks)
-        panel.addWidget(self.deadzone_slider)
-        
-        panel.addWidget(QLabel("Velocità Movimento Regia (Lento -> Rapido)"))
+        slider_grid.addWidget(self.deadzone_slider, 1, 1)
+
+        slider_grid.addWidget(QLabel("Velocità Regia:"), 1, 2)
         self.inertia_slider = QSlider(Qt.Horizontal)
         self.inertia_slider.setRange(0, 100)
-        self.inertia_slider.setTickPosition(QSlider.NoTicks)
-        panel.addWidget(self.inertia_slider)
+        slider_grid.addWidget(self.inertia_slider, 1, 3)
 
-    def _setup_roi_controls(self, panel: QVBoxLayout) -> None:
-        """Pulsanti per gestione area ROI."""
-        roi_group = QGroupBox("Gestione Area (ROI)")
-        roi_layout = QVBoxLayout()
-        roi_group.setLayout(roi_layout)
-        panel.addWidget(roi_group)
+        # Le colonne slider si espandono, le label no
+        slider_grid.setColumnStretch(1, 1)
+        slider_grid.setColumnStretch(3, 1)
+        layout.addLayout(slider_grid)
 
-        self.btn_load_roi = QPushButton("Carica ROI")
-        self.btn_create_roi = QPushButton("Crea ROI")
-        self.btn_generate_roi = QPushButton("Genera ROI")
-        self.btn_save_roi = QPushButton("Salva ROI")
-        roi_layout.addWidget(self.btn_load_roi)
-        roi_layout.addWidget(self.btn_create_roi)
-        roi_layout.addWidget(self.btn_generate_roi)
-        roi_layout.addWidget(self.btn_save_roi)
+        # Riga 3: ROI buttons compatti
+        roi_row = QHBoxLayout()
+        roi_row.setSpacing(4)
+        roi_row.addWidget(QLabel("ROI:"))
+        self.btn_load_roi = QPushButton("Carica")
+        self.btn_create_roi = QPushButton("Crea")
+        self.btn_generate_roi = QPushButton("Genera")
+        self.btn_save_roi = QPushButton("Salva")
+        roi_row.addWidget(self.btn_load_roi)
+        roi_row.addWidget(self.btn_create_roi)
+        roi_row.addWidget(self.btn_generate_roi)
+        roi_row.addWidget(self.btn_save_roi)
+        roi_row.addStretch()
+        layout.addLayout(roi_row)
 
     # ── Connessioni interne ─────────────────────────────────────────────
 

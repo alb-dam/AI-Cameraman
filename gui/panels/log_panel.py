@@ -22,7 +22,7 @@ class LogPanel(QWidget):
 
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
-        self.log_text.setMaximumHeight(150)
+        self.log_text.setMaximumHeight(80)
         layout.addWidget(self.log_text)
 
     # ── API pubblica ────────────────────────────────────────────────────

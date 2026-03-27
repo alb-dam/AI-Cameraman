@@ -42,7 +42,7 @@ class PreviewPanel(QWidget):
         self.preview_label = QLabel("Nessun segnale video in corso")
         self.preview_label.setAlignment(Qt.AlignCenter)
         self.preview_label.setStyleSheet("background-color: black; color: white;")
-        self.preview_label.setMinimumSize(640, 480)
+        self.preview_label.setMinimumSize(320, 180)
         self.preview_label.installEventFilter(self)
         layout.addWidget(self.preview_label)
 

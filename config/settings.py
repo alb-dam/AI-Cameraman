@@ -44,7 +44,7 @@ class AppSettings:
     
     # Slider Tolleranza Movimento (0% = Reattiva/Tight, 100% = Tollerante/Loose)
     director_zoom_deadzone_min: float = 0.00
-    director_zoom_deadzone_max: float = 1.00
+    director_zoom_deadzone_max: float = 0.50
     director_pan_tilt_deadzone_min: float = 0.00
     director_pan_tilt_deadzone_max: float = 0.50
     director_max_spread_min: float = 0.60
@@ -52,7 +52,7 @@ class AppSettings:
     
     # Slider Velocità Movimento Regia (0% = Cinematica/Lenta, 100% = Rapida/Scattosa)
     director_zoom_smoothing_min: float = 0.00
-    director_zoom_smoothing_max: float = 0.50
+    director_zoom_smoothing_max: float = 0.10
     director_pan_tilt_smoothing_min: float = 0.00
     director_pan_tilt_smoothing_max: float = 1.00
     director_dynamic_scale_min: float = 1.00
