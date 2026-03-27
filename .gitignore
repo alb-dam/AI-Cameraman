@@ -24,3 +24,8 @@ logs/
 # Coverage
 .coverage
 htmlcov/
+
+# PyInstaller
+build/
+dist/
+_runtime_hook.py
