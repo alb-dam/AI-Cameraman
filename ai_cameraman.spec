@@ -20,12 +20,14 @@ datas = [
     (os.path.join(PROJECT_ROOT, 'assets', 'sam3.pt'), 'assets'),
     (os.path.join(PROJECT_ROOT, 'assets', 'yolo26s.pt'), 'assets'),
     (os.path.join(PROJECT_ROOT, 'assets', 'yolo26s.mlpackage'), os.path.join('assets', 'yolo26s.mlpackage')),
+    (os.path.join(PROJECT_ROOT, 'assets', 'logo.png'), 'assets'),
     (os.path.join(PROJECT_ROOT, 'config.json'), '.'),
 ]
 
 # Raccogli data files dai pacchetti che ne hanno bisogno
 datas += collect_data_files('ultralytics')
 datas += collect_data_files('timm')
+datas += collect_data_files('clip')
 
 # ── Hidden imports ──────────────────────────────────────────────────────
 # Moduli caricati dinamicamente che PyInstaller non rileva automaticamente
@@ -155,7 +157,7 @@ if sys.platform == 'darwin':
     app = BUNDLE(
         coll,
         name='AI-Cameraman.app',
-        icon=None,  # Aggiungere un'icona .icns qui se disponibile
+        icon=os.path.join(PROJECT_ROOT, 'assets', 'logo.icns'),  # Aggiunto il logo .icns
         bundle_identifier='com.aicameraman.app',
         info_plist={
             'CFBundleName': 'AI-Cameraman',

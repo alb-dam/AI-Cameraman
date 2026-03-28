@@ -7,11 +7,12 @@ Solo segnali, callback e coordinazione.
 import sys
 import numpy as np
 
+import os
 from PySide6.QtWidgets import (QApplication, QMainWindow, QWidget,
                                QHBoxLayout, QVBoxLayout,
                                QFileDialog, QPushButton)
 from PySide6.QtCore import Signal, QObject
-from PySide6.QtGui import QCloseEvent
+from PySide6.QtGui import QCloseEvent, QIcon
 
 from config.settings import SettingsManager
 from core.interfaces import IController
@@ -34,7 +35,13 @@ class MainWindow(QMainWindow):
         self.settings: SettingsManager = settings
         self.bridge = UIBridge()
 
+        base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        icon_path = os.path.join(base_path, "assets", "logo.png")
+
         self.setWindowTitle("AI-Cameraman")
+        # Su macOS lasciamo che il Dock usi l'icona nativa .icns del bundle .app
+        if sys.platform != "darwin" and os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
         self.resize(640, 621)
         self.setMinimumSize(640, 360)  # 16:9 aspect ratio minimo
 
@@ -248,6 +255,13 @@ def main_window_run(controller: IController, settings: SettingsManager) -> None:
     app = QApplication.instance()
     if app is None:
         app = QApplication(sys.argv)
+        
+    # Applica l'icona anche all'intera app (su macOS cambia l'icona nel Dock se forzata)
+    # Evitiamo di farlo su macOS per non sovrascrivere l'icona HQ .icns del bundle .app
+    base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    icon_path = os.path.join(base_path, "assets", "logo.png")
+    if sys.platform != "darwin" and os.path.exists(icon_path):
+        app.setWindowIcon(QIcon(icon_path))
         
     window = MainWindow(controller, settings)
     window.show()

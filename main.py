@@ -1,6 +1,7 @@
 """Entry point dell'applicazione AI-Cameraman (Clean Architecture)."""
 
 import logging
+import multiprocessing
 
 from app.logger import setup_logger
 from config.settings import settings_run
@@ -19,4 +20,5 @@ def main_run() -> None:
 
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()
     main_run()

@@ -310,7 +310,14 @@ class ROIManager:
                          "Aggiornare ultralytics: pip install -U ultralytics")
             return None, None
 
-        model_path = os.path.join("assets", "sam3.pt")
+        import sys
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            base_path = sys._MEIPASS
+        else:
+            base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        
+        model_path = os.path.join(base_path, "assets", "sam3.pt")
+        
         if not os.path.exists(model_path):
             logger.error("Genera ROI: modello SAM3 non trovato in %s. "
                          "Scaricarlo da HuggingFace: "
