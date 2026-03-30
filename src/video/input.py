@@ -75,7 +75,6 @@ class VideoInput:
                 f"&rcvbuf=16777216"
                 f"&sndbuf=16777216"
                 f"&pkt_size=1316"
-                f"&tlpktdrop=0"
             )
 
             # Imposta le opzioni globali ffmpeg per evitare blocchi infiniti su OpenCV
