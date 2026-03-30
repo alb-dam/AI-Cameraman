@@ -34,13 +34,53 @@ class YoloDetector:
     MAX_BALL_SIZE_RATIO: float = 0.20   # La palla non deve superare il 20% del lato minore
     MAX_BALL_ASPECT_RATIO: float = 3.0  # Aspect ratio massimo accettabile (filtra allucinazioni)
 
-    def __init__(self, model_name: str = "assets/yoloe-26m-seg.pt", ball_conf_thresh: float = 0.4) -> None:
+    def __init__(self, model_name: str = "assets/yoloe-26s-seg.pt", ball_conf_thresh: float = 0.4) -> None:
+        self._ensure_mobileclip_exists()
         self.device, self.use_half = self._detect_device()
         resolved_path = self._resolve_model_path(model_name)
         self.model: Any = self._load_model(resolved_path)
         self.ball_conf_thresh: float = ball_conf_thresh
         self._inference_counter = 0
         self._class_names: Dict[int, str] = {}  # Mappa id -> nome classe dal modello
+
+    @staticmethod
+    def _ensure_mobileclip_exists() -> None:
+        """Assicura che mobileclip2_b.ts sia in assets/ invece che nella root."""
+        import os
+        import sys
+        
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            base_path = sys._MEIPASS
+        else:
+            base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+
+        assets_dir = os.path.join(base_path, 'assets')
+        os.makedirs(assets_dir, exist_ok=True)
+        clip_path = os.path.join(assets_dir, "mobileclip2_b.ts")
+        
+        # Aggiorniamo ultralytics per fargli cercare i modelli in assets
+        try:
+            from ultralytics import settings as ultra_settings
+            ultra_settings.update({'weights_dir': assets_dir})
+        except ImportError:
+            pass
+
+        if not os.path.exists(clip_path):
+            import urllib.request
+            logger.warning(f"YOLOE: mobileclip2_b.ts non trovato in assets/. Avvio download...")
+            url = "https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip2_b.ts"
+            try:
+                def report_progress(block_num, block_size, total_size):
+                    if total_size > 0:
+                        percent = min(int(block_num * block_size * 100 / total_size), 100)
+                        sys.stdout.write(f"\rScaricamento mobileclip2_b.ts: {percent}%")
+                        sys.stdout.flush()
+
+                urllib.request.urlretrieve(url, clip_path, reporthook=report_progress)
+                sys.stdout.write("\n")
+                logger.info("YOLOE: Download di mobileclip2_b.ts in assets/ completato con successo.")
+            except Exception as e:
+                logger.error(f"YOLOE: Errore nel download di mobileclip2_b.ts: {e}")
 
     @staticmethod
     def _resolve_model_path(base_name: str, force_pt: bool = False) -> str:
@@ -56,7 +96,7 @@ class YoloDetector:
         if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
             base_path = sys._MEIPASS
         else:
-            base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+            base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 
         if not os.path.isabs(base_name):
             base_name = os.path.join(base_path, base_name)
@@ -214,9 +254,9 @@ class YoloDetector:
             if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
                 base_path = sys._MEIPASS
             else:
-                base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+                base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
 
-            model_base = os.path.join(base_path, "assets", "yoloe-26m-seg.pt")
+            model_base = os.path.join(base_path, "assets", "yoloe-26s-seg.pt")
             
             # Forza l'uso del .pt per la ROI perché i formati esportati (mlpackage/engine)
             # nascono con i text embeddings del training/export statici (person/ball). 

@@ -6,7 +6,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-cd "$SCRIPT_DIR"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "$PROJECT_ROOT"
 
 echo "═══════════════════════════════════════════════════════"
 echo "  AI-Cameraman Build"
@@ -15,7 +16,7 @@ echo "════════════════════════�
 # 1. Attiva il virtualenv se presente
 if [ -d ".venv" ]; then
     echo "📦 Attivazione virtualenv .venv..."
-    source .venv/bin/activate
+    source "$PROJECT_ROOT/.venv/bin/activate"
 fi
 
 # 2. Installa PyInstaller se necessario
@@ -33,7 +34,7 @@ echo ""
 echo "🔨 Avvio build PyInstaller..."
 echo "   ⚠️  I modelli AI pesano ~3.5 GB — il build richiederà diversi minuti."
 echo ""
-python -m PyInstaller ai_cameraman.spec --noconfirm
+python -m PyInstaller scripts/ai_cameraman.spec --noconfirm
 
 # 5. Pulizia file temporanei
 rm -f _runtime_hook.py

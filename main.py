@@ -2,6 +2,11 @@
 
 import logging
 import multiprocessing
+import os
+import sys
+
+# Aggiunge src/ al path per risolvere i pacchetti interni
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
 
 from app.logger import setup_logger
 from config.settings import settings_run

@@ -12,18 +12,24 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 block_cipher = None
 
 # ── Path di progetto ────────────────────────────────────────────────────
-PROJECT_ROOT = os.path.abspath(SPECPATH)
+PROJECT_ROOT = os.path.abspath(os.path.join(SPECPATH, '..'))
+SRC_DIR = os.path.join(PROJECT_ROOT, 'src')
 
 # ── Data files ──────────────────────────────────────────────────────────
 # Modelli AI e file di configurazione da includere nel bundle
 datas = [
-    (os.path.join(PROJECT_ROOT, 'assets', 'yoloe-26m-seg.pt'), 'assets'),
+    (os.path.join(PROJECT_ROOT, 'assets', 'yoloe-26s-seg.pt'), 'assets'),
+    (os.path.join(PROJECT_ROOT, 'assets', 'mobileclip2_b.ts'), 'assets'),
     (os.path.join(PROJECT_ROOT, 'assets', 'logo.png'), 'assets'),
     (os.path.join(PROJECT_ROOT, 'tmp', 'config.json'), 'tmp'),
 ]
 
 # Raccogli data files dai pacchetti che ne hanno bisogno
 datas += collect_data_files('ultralytics')
+try:
+    datas += collect_data_files('clip')
+except Exception:
+    pass
 
 # ── Hidden imports ──────────────────────────────────────────────────────
 # Moduli caricati dinamicamente che PyInstaller non rileva automaticamente
@@ -33,6 +39,7 @@ hiddenimports = []
 hiddenimports += collect_submodules('ultralytics')
 
 # PyTorch
+hiddenimports += ['clip']
 hiddenimports += [
     'torch',
     'torch.utils',
@@ -93,7 +100,7 @@ with open(runtime_hook_path, 'w') as f:
 # ── Analysis ────────────────────────────────────────────────────────────
 a = Analysis(
     [os.path.join(PROJECT_ROOT, 'main.py')],
-    pathex=[PROJECT_ROOT],
+    pathex=[PROJECT_ROOT, SRC_DIR],
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,

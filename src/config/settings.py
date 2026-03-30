@@ -28,7 +28,7 @@ class AppSettings:
     # Nomi delle sorgenti NDI
     ndi_ai_name: str = "AI-Cameraman AI"
     ndi_native_name: str = "AI-Cameraman Native"
-    yolo_model: str = "assets/yoloe-26m-seg.pt"
+    yolo_model: str = "assets/yoloe-26s-seg.pt"
     yolo_imgsz: int = 640
     yolo_inference_interval: int = 6
     
@@ -62,10 +62,16 @@ class AppSettings:
 class SettingsManager:
     """Gestione del ciclo di vita dei settings (load, save, get, set)."""
 
-    def __init__(self, config_file: str = "tmp/config.json") -> None:
-        self.config_file: str = config_file
+    def __init__(self, config_file: Optional[str] = None) -> None:
+        import sys
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            base_path = sys._MEIPASS
+        else:
+            base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+            
+        self.config_file: str = config_file or os.path.join(base_path, "tmp", "config.json")
         # Crea la directory tmp/ se non esiste (contiene config, roi, debug)
-        os.makedirs(os.path.dirname(config_file), exist_ok=True)
+        os.makedirs(os.path.dirname(self.config_file), exist_ok=True)
         self.settings: AppSettings = AppSettings()
         self._config_version: int = 0  # Incrementato ad ogni set() per dirty-flag
         # Lookup precompilato {nome: tipo} per O(1) nel metodo set()
@@ -165,6 +171,6 @@ class SettingsManager:
         self.save()
 
 
-def settings_run(config_file: str = "tmp/config.json") -> SettingsManager:
+def settings_run(config_file: Optional[str] = None) -> SettingsManager:
     """Entry point per l'inizializzazione dei settings."""
     return SettingsManager(config_file)

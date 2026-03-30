@@ -224,7 +224,7 @@ class OutlierFilter:
 class Detector:
     """Façade che compone rilevamento, tracking e centro d'azione."""
 
-    def __init__(self, model_name: str = "assets/yoloe-26m-seg.pt", yolo_imgsz: int = 640, debug: bool = False) -> None:
+    def __init__(self, model_name: str = "assets/yoloe-26s-seg.pt", yolo_imgsz: int = 640, debug: bool = False) -> None:
         """Inizializza i tre sotto-moduli interni e lo stato locale."""
         self.yolo = YoloDetector(model_name)
         self.yolo_imgsz = yolo_imgsz
@@ -304,6 +304,6 @@ class Detector:
         return spread_px / reference_length
 
 
-def detector_run(model_name: str = "assets/yoloe-26m-seg.pt", yolo_imgsz: int = 640, debug: bool = False) -> Detector:
+def detector_run(model_name: str = "assets/yoloe-26s-seg.pt", yolo_imgsz: int = 640, debug: bool = False) -> Detector:
     """Crea e ritorna un Detector inizializzato."""
     return Detector(model_name=model_name, yolo_imgsz=yolo_imgsz, debug=debug)

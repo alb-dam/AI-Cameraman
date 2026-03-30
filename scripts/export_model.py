@@ -30,7 +30,7 @@ def export_model():
     
     if not os.path.exists(model_path):
         logger.warning(f"Modello sorgente non trovato in: {model_path}")
-        logger.info("Avvio del download automatico (yoloe-26m-seg.pt)...")
+        logger.info("Avvio del download automatico (yoloe-26s-seg.pt)...")
         os.makedirs(os.path.dirname(model_path), exist_ok=True)
         try:
             import urllib.request
