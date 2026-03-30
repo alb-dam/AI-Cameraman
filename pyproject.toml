@@ -56,6 +56,9 @@ ignore_missing_imports = true
 warn_unused_configs = true
 check_untyped_defs = true
 
+[tool.hatch.metadata]
+allow-direct-references = true
+
 [tool.hatch.build.targets.wheel]
 packages = [
     "src/app",
