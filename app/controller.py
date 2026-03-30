@@ -105,12 +105,12 @@ class ApplicationController:
             self._log("Genera ROI: frame insufficienti raccolti. Verifica la sorgente video.")
             return
 
-        self._log(f"Genera ROI: {len(collected_frames)} frame raccolti. Avvio segmentazione SAM3...")
-        success = self.roi_manager.generate_roi_from_video(collected_frames, "roi.json")
+        self._log(f"Genera ROI: {len(collected_frames)} frame raccolti. Avvio segmentazione YOLOE...")
+        success = self.roi_manager.generate_roi_from_video(collected_frames, "tmp/roi.json")
 
         if success:
-            self.settings.set("last_roi_path", "roi.json")
-            self._log("ROI generata automaticamente e salvata in roi.json.")
+            self.settings.set("last_roi_path", "tmp/roi.json")
+            self._log("ROI generata automaticamente e salvata in tmp/roi.json.")
         else:
             self._log("Genera ROI: fallita. Controllare i log per dettagli.")
 

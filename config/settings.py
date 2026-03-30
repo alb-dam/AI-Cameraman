@@ -23,12 +23,12 @@ class AppSettings:
     debug_mode: bool = False
     enable_performance_monitor: bool = False
     
-    last_roi_path: str = "roi.json"
+    last_roi_path: str = "tmp/roi.json"
     
     # Nomi delle sorgenti NDI
     ndi_ai_name: str = "AI-Cameraman AI"
     ndi_native_name: str = "AI-Cameraman Native"
-    yolo_model: str = "assets/yolo26s.pt"
+    yolo_model: str = "assets/yoloe-26m-seg.pt"
     yolo_imgsz: int = 640
     yolo_inference_interval: int = 6
     
@@ -62,8 +62,10 @@ class AppSettings:
 class SettingsManager:
     """Gestione del ciclo di vita dei settings (load, save, get, set)."""
 
-    def __init__(self, config_file: str = "config.json") -> None:
+    def __init__(self, config_file: str = "tmp/config.json") -> None:
         self.config_file: str = config_file
+        # Crea la directory tmp/ se non esiste (contiene config, roi, debug)
+        os.makedirs(os.path.dirname(config_file), exist_ok=True)
         self.settings: AppSettings = AppSettings()
         self._config_version: int = 0  # Incrementato ad ogni set() per dirty-flag
         # Lookup precompilato {nome: tipo} per O(1) nel metodo set()
@@ -163,6 +165,6 @@ class SettingsManager:
         self.save()
 
 
-def settings_run(config_file: str = "config.json") -> SettingsManager:
+def settings_run(config_file: str = "tmp/config.json") -> SettingsManager:
     """Entry point per l'inizializzazione dei settings."""
     return SettingsManager(config_file)

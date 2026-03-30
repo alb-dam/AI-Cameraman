@@ -2,7 +2,7 @@
 
 **Regia virtuale automatica per il basket, basata su intelligenza artificiale.**
 
-AI-Cameraman trasforma una qualsiasi sorgente video fissa (webcam, file, stream SRT) in un'inquadratura dinamica e professionale: rileva i giocatori e il pallone in tempo reale con YOLO26, ne traccia i movimenti con filtri di Kalman, e genera automaticamente pan, tilt e zoom fluidi per seguire l'azione. L'output viene trasmesso via **NDI** per l'integrazione diretta in OBS Studio, vMix o qualsiasi software compatibile.
+AI-Cameraman trasforma una qualsiasi sorgente video fissa (webcam, file, stream SRT) in un'inquadratura dinamica e professionale: rileva i giocatori e il pallone in tempo reale con YOLOE-26, ne traccia i movimenti con filtri di Kalman, e genera automaticamente pan, tilt e zoom fluidi per seguire l'azione. L'output viene trasmesso via **NDI** per l'integrazione diretta in OBS Studio, vMix o qualsiasi software compatibile.
 
 ---
 
@@ -10,16 +10,16 @@ AI-Cameraman trasforma una qualsiasi sorgente video fissa (webcam, file, stream 
 
 | Funzionalità | Descrizione |
 |---|---|
-| **Rilevamento AI in tempo reale** | YOLO26 per il rilevamento di giocatori (classe `person`) e pallone (classe `sports ball`) |
+| **Rilevamento AI in tempo reale** | YOLOE-26 (open-vocabulary) per il rilevamento di giocatori (classe `person`) e pallone (classe `sports ball`) |
 | **Tracking Kalman** | Filtri di Kalman 2D per stabilizzare le posizioni e predire i movimenti tra un'inferenza e l'altra |
 | **Regia virtuale (Virtual PTZ)** | Modello matematico unificato per pan, tilt e zoom con deadzone spaziale (leash) e smoothing cinematico |
 | **Controllo UI Avanzato** | Regolazione in tempo reale della Regia con slider dedicati per Tolleranza (Deadzone) e Reattività (Inerzia/Smoothing) |
 | **Zoom dinamico** | Lo zoom si adatta automaticamente allo spread dei giocatori: più sono raggruppati, più si zooma |
 | **Dual NDI Output** | Due canali NDI indipendenti: **AI** (inquadratura elaborata) e **Native** (passthrough originale) |
 | **ROI (Region of Interest)** | Maschera poligonale per limitare il rilevamento al solo campo di gioco |
-| **Generazione ROI automatica** | Segmentazione automatica del campo con **SAM3** (Segment Anything Model 3) |
+| **Generazione ROI automatica** | Segmentazione automatica del campo con **YOLOE-26** (text-prompted segmentation) |
 | **Sorgenti multiple** | Webcam, file video (MP4/AVI/MKV) e stream **SRT** con riconnessione automatica |
-| **Accelerazione hardware** | GPU CUDA, Apple MPS o CPU — con export automatico in CoreML (macOS) e ONNX/TensorRT (Windows) |
+| **Accelerazione hardware** | GPU CUDA, Apple MPS o CPU |
 | **GUI PySide6** | Interfaccia grafica con preview live, controlli real-time e pannello log |
 | **Performance Monitor** | FPS per stage, latenza end-to-end e identificazione automatica del collo di bottiglia |
 
@@ -63,10 +63,10 @@ AI-Cameraman/
 │   ├── interfaces.py        # Protocol/Interfacce per Dependency Injection
 │   ├── models.py            # Dataclass di dominio (Detection, TrackedObject, CameraInstruction, ROI, ...)
 │   ├── vision.py            # Detector: compone YOLO + KalmanTracker + ActionCenterCalculator
-│   ├── yolo_model.py        # Inferenza YOLO isolata (detect, device auto-detect, export automatico)
+│   ├── yolo_model.py        # Inferenza YOLOE isolata (detect, segment, device auto-detect)
 │   ├── director.py          # Regia virtuale: zoom, pan/tilt, smoothing, deadzone
 │   ├── tracking.py          # ActionCenterCalculator (baricentro ponderato dei giocatori)
-│   ├── roi.py               # ROIManager: persistenza, editing, maschere vettoriali, generazione SAM3
+│   ├── roi.py               # ROIManager: persistenza, editing, maschere vettoriali, generazione YOLOE
 │   ├── geometry.py          # Servizi matematici puri (crop, maschere OpenCV, poligoni)
 │   ├── performance.py       # PerformanceMonitor: FPS per stage e latenza end-to-end
 │   └── thread_manager.py    # DropFrameQueue e WorkerThread
@@ -85,9 +85,7 @@ AI-Cameraman/
 │       └── log_panel.py     # Pannello log messaggi
 │
 ├── assets/                  # Modelli AI (non versionati in git)
-│   ├── yolo26s.pt           # Modello YOLO26s (PyTorch)
-│   ├── yolo26s.mlpackage/   # Export CoreML (generato automaticamente su macOS)
-│   └── sam3.pt              # Modello SAM3 per generazione ROI automatica
+│   └── yoloe-26m-seg.pt     # Modello YOLOE-26m-seg (detection + segmentazione)
 │
 ├── tests/                   # Test suite (pytest)
 │   ├── conftest.py          # Fixture condivise
@@ -127,12 +125,11 @@ pip install -r requirements.txt
 
 ### Modelli AI
 
-I modelli non sono inclusi nel repository (`.gitignore`). sam3.pt deve essere scaricato da https://huggingface.co/facebook/sam3/blob/main/sam3.pt e posizionato nella cartella `assets/`:
+I modelli non sono inclusi nel repository (`.gitignore`). Il modello viene scaricato automaticamente da ultralytics al primo avvio, oppure può essere scaricato manualmente:
 
 | Modello | Utilizzo | Note |
 |---|---|---|
-| `yolo26s.pt` | Rilevamento giocatori e pallone | Viene scaricato ed auto-esportato in CoreML (macOS) o ONNX (Windows) al primo avvio |
-| `sam3.pt` | Generazione automatica ROI | Necessario solo per la funzione "Genera ROI" (~3.4 GB) |
+| `yoloe-26m-seg.pt` | Rilevamento giocatori/pallone + segmentazione campo | Unico modello per detection e ROI automatica (~67 MB) |
 
 ---
 
@@ -149,7 +146,7 @@ L'applicazione si avvia con la GUI PySide6 e inizia immediatamente la cattura da
 ### Workflow Tipico
 
 1. **Seleziona la sorgente** dal pannello controlli (webcam, file video, o SRT)
-2. **Carica una ROI** (opzionale) per limitare il rilevamento al campo — oppure usa **"Genera ROI"** per la segmentazione automatica con SAM3
+2. **Carica una ROI** (opzionale) per limitare il rilevamento al campo — oppure usa **"Genera ROI"** per la segmentazione automatica con YOLOE-26
 3. **Regola i parametri** in tempo reale:
    - **Zoom fisso** — livello base di ingrandimento
    - **Zoom dinamico** — intensità dello zoom adattivo basato sullo spread dei giocatori
@@ -195,7 +192,7 @@ La configurazione è persistente nel file `config.json`, modificabile sia dalla 
 
 | Parametro | Default | Descrizione |
 |---|---|---|
-| `yolo_model` | `"assets/yolo26s.pt"` | Percorso del modello YOLO |
+| `yolo_model` | `"assets/yoloe-26m-seg.pt"` | Percorso del modello YOLOE |
 | `yolo_imgsz` | `640` | Risoluzione di inferenza YOLO |
 | `yolo_inference_interval` | `6` | Inferenza completa ogni N frame (il tracking invisibile di Kalman in frame-intermedio è fissato matematicamente sulla massima reattività) |
 
@@ -225,7 +222,7 @@ pytest --cov=app --cov=core --cov=video
 | Pacchetto | Ruolo |
 |---|---|
 | `torch` + `torchvision` | Backend ML (CUDA 12.8 su Windows, MPS su macOS) |
-| `ultralytics` | Framework YOLOv11 e SAM3 |
+| `ultralytics` | Framework YOLOE-26 (detection + segmentazione open-vocabulary) |
 | `opencv-python` | Cattura video, processing frame, rendering overlay |
 | `PySide6` | GUI desktop cross-platform (Qt6) |
 | `cyndilib` | Invio video via protocollo NDI |
@@ -245,8 +242,8 @@ pytest --cov=app --cov=core --cov=video
 
 - **Risoluzione output**: determinata dinamicamente dalla sorgente video di input.
 - **Letterbox**: i frame vengono adattati alla risoluzione output con padding nero per preservare l'aspect ratio.
-- **Skip Inference Pattern**: YOLO viene eseguito ogni `yolo_inference_interval` frame; nei frame intermedi, il tracking continua tramite la sola predizione Kalman, riducendo drasticamente il carico GPU.
-- **Export automatico modelli**: al primo avvio, il modello `.pt` viene automaticamente esportato in CoreML (macOS) o ONNX (Windows) per inferenza ottimizzata.
+- **Skip Inference Pattern**: YOLOE viene eseguito ogni `yolo_inference_interval` frame; nei frame intermedi, il tracking continua tramite la sola predizione Kalman, riducendo drasticamente il carico GPU.
+- **Modello unico**: YOLOE-26 gestisce sia la detection (giocatori + pallone) tramite `set_classes()` che la segmentazione del campo tramite text prompt, eliminando la necessità di SAM3 (~3.4 GB).
 - **Pulizia memoria GPU**: ogni 1000 inferenze viene eseguita una garbage collection incrementale e svuotamento della cache GPU in background.
 - **Thread safety**: gli assegnamenti di reference NumPy sono atomici sotto il GIL di Python; le code `DropFrameQueue` garantiscono comunicazione thread-safe senza backpressure.
 - **Salvataggio atomico config**: il `config.json` viene scritto in un file temporaneo e poi rinominato con `os.replace()` per prevenire corruzione in caso di crash.

@@ -213,7 +213,7 @@ class MainWindow(QMainWindow):
 
     def _on_save_roi(self) -> None:
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "Salva ROI", "roi.json", "JSON Files (*.json)"
+            self, "Salva ROI", "tmp/roi.json", "JSON Files (*.json)"
         )
         if not file_path:
             return

@@ -176,14 +176,14 @@ class ROIManager:
             frame, self.roi.polygon, color=color, thickness=thickness
         )
 
-    # ── Generazione automatica ROI con SAM3 ─────────────────────────────
+    # ── Generazione automatica ROI con YOLOE ────────────────────────────
 
     def generate_roi_from_video(self, frames: List[np.ndarray], save_path: str) -> bool:
-        """Genera automaticamente la ROI del campo da basket usando SAM3.
+        """Genera automaticamente la ROI del campo da basket usando YOLOE.
 
         1. Calcola la mediana dei frame per rimuovere i giocatori
         2. Applica filtro Gaussiano per ridurre artefatti residui
-        3. Segmenta il campo con SAM3 (text prompt 'basketball court')
+        3. Segmenta il campo con YOLOE (text prompt 'basketball court')
         4. Estrae il contorno della maschera più grande come punti normalizzati
 
         Args:
@@ -215,15 +215,16 @@ class ROIManager:
             lab = cv2.merge([l, a, b])
             median_frame = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
 
-            cv2.imwrite("debug_median_frame.png", median_frame)
+            os.makedirs("tmp", exist_ok=True)
+            cv2.imwrite("tmp/debug_median_frame.png", median_frame)
             logger.info("Genera ROI: filtro bilaterale + CLAHE + riduzione esposizione applicati. "
-                        "Mediana salvata in debug_median_frame.png.")
+                        "Mediana salvata in tmp/debug_median_frame.png.")
 
-            # 3. Segmentazione con SAM3
-            logger.info("Genera ROI: avvio segmentazione SAM3...")
-            masks, scores = self._run_sam3_segmentation(median_frame)
+            # 3. Segmentazione con YOLOE (text prompt)
+            logger.info("Genera ROI: avvio segmentazione YOLOE...")
+            masks, scores = self._run_yoloe_segmentation(median_frame)
             if masks is None or len(masks) == 0:
-                logger.error("Genera ROI: SAM3 non ha prodotto maschere.")
+                logger.error("Genera ROI: YOLOE non ha prodotto maschere.")
                 return False
 
             # 4. Unisci maschere significative (>5% del frame) per includere zone colorate
@@ -240,7 +241,7 @@ class ROIManager:
                     continue
                 merged_mask = cv2.bitwise_or(merged_mask, m_uint8)
                 included += 1
-            logger.info("Genera ROI: unite %d/%d maschere SAM3 (scartate %d < 5%% frame).",
+            logger.info("Genera ROI: unite %d/%d maschere YOLOE (scartate %d < 5%% frame).",
                         included, len(masks), len(masks) - included)
 
             # 5. Post-processing morfologico: kernel grande per unire zone separate
@@ -296,64 +297,17 @@ class ROIManager:
             return False
 
     @staticmethod
-    def _run_sam3_segmentation(frame: np.ndarray):
-        """Esegue la segmentazione SAM3 con text prompt 'basketball court'.
+    def _run_yoloe_segmentation(frame: np.ndarray):
+        """Esegue la segmentazione YOLOE con text prompt 'basketball court'.
 
         Returns:
             Tupla (masks, scores) dove masks è una lista di array binari
             e scores le relative confidenze, oppure (None, None) in caso di errore.
         """
-        try:
-            from ultralytics.models.sam import SAM3SemanticPredictor
-        except ImportError:
-            logger.error("Genera ROI: ultralytics SAM3SemanticPredictor non disponibile. "
-                         "Aggiornare ultralytics: pip install -U ultralytics")
-            return None, None
-
-        import sys
-        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-            base_path = sys._MEIPASS
-        else:
-            base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-        
-        model_path = os.path.join(base_path, "assets", "sam3.pt")
-        
-        if not os.path.exists(model_path):
-            logger.error("Genera ROI: modello SAM3 non trovato in %s. "
-                         "Scaricarlo da HuggingFace: "
-                         "https://huggingface.co/facebook/sam3/resolve/main/sam3.pt",
-                         model_path)
-            return None, None
-
-        try:
-            overrides = dict(
-                conf=0.50,
-                task="segment",
-                mode="predict",
-                model=model_path,
-                save=False,
-                verbose=False,
-            )
-            predictor = SAM3SemanticPredictor(overrides=overrides)
-            predictor.set_image(frame)
-            results = predictor(text=["basketball court"])
-
-            if results is None or len(results) == 0:
-                return None, None
-
-            result = results[0]
-            if result.masks is None or result.masks.data is None:
-                return None, None
-
-            masks = result.masks.data.cpu().numpy()
-            # Threshold esplicito: solo pixel con confidenza >= 0.7
-            masks = (masks >= 0.7).astype(np.uint8)
-            scores = result.boxes.conf.cpu().numpy() if result.boxes is not None else None
-            return masks, scores
-
-        except Exception as e:
-            logger.error("Genera ROI: errore SAM3: %s", e)
-            return None, None
+        from core.yolo_model import YoloDetector
+        detector = YoloDetector.__new__(YoloDetector)
+        detector.device, detector.use_half = YoloDetector._detect_device()
+        return detector.segment(frame, ["basketball court", "court", "playing field"])
 
 
 def roi_manager_run(filepath: Optional[str] = None) -> ROIManager:
@@ -362,4 +316,3 @@ def roi_manager_run(filepath: Optional[str] = None) -> ROIManager:
     if filepath and os.path.exists(filepath):
         rm.load_roi(filepath)
     return rm
-

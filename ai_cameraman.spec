@@ -17,30 +17,20 @@ PROJECT_ROOT = os.path.abspath(SPECPATH)
 # ── Data files ──────────────────────────────────────────────────────────
 # Modelli AI e file di configurazione da includere nel bundle
 datas = [
-    (os.path.join(PROJECT_ROOT, 'assets', 'sam3.pt'), 'assets'),
-    (os.path.join(PROJECT_ROOT, 'assets', 'yolo26s.pt'), 'assets'),
-    (os.path.join(PROJECT_ROOT, 'assets', 'yolo26s.mlpackage'), os.path.join('assets', 'yolo26s.mlpackage')),
+    (os.path.join(PROJECT_ROOT, 'assets', 'yoloe-26m-seg.pt'), 'assets'),
     (os.path.join(PROJECT_ROOT, 'assets', 'logo.png'), 'assets'),
-    (os.path.join(PROJECT_ROOT, 'config.json'), '.'),
+    (os.path.join(PROJECT_ROOT, 'tmp', 'config.json'), 'tmp'),
 ]
 
 # Raccogli data files dai pacchetti che ne hanno bisogno
 datas += collect_data_files('ultralytics')
-datas += collect_data_files('timm')
-datas += collect_data_files('clip')
 
 # ── Hidden imports ──────────────────────────────────────────────────────
 # Moduli caricati dinamicamente che PyInstaller non rileva automaticamente
 hiddenimports = []
 
-# Ultralytics + YOLO
+# Ultralytics + YOLOE
 hiddenimports += collect_submodules('ultralytics')
-
-# CLIP (ultralytics fork)
-hiddenimports += collect_submodules('clip')
-
-# Timm (usato da CLIP/SAM)
-hiddenimports += collect_submodules('timm')
 
 # PyTorch
 hiddenimports += [

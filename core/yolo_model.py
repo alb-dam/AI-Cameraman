@@ -1,6 +1,11 @@
-"""Inferenza YOLO isolata dal resto del codice.
+"""Inferenza YOLOE isolata dal resto del codice.
 
-Riceve un frame e restituisce bounding box grezzi. Non mantiene stato di tracking.
+Riceve un frame e restituisce bounding box grezzi e maschere di segmentazione.
+Non mantiene stato di tracking.
+
+Utilizza YOLOE-26 (open-vocabulary) per:
+- Detection giocatori e pallone tramite text prompt
+- Segmentazione del campo per la generazione automatica della ROI
 """
 
 from typing import List, Dict, Any, Tuple, Optional
@@ -13,26 +18,104 @@ from core.models import Detection
 logger = logging.getLogger(__name__)
 
 try:
-    from ultralytics import YOLO  # type: ignore
+    from ultralytics import YOLOE  # type: ignore
 except ImportError:
-    logger.warning("Modulo ultralytics (YOLO) non trovato. AI disabilitata.")
-    YOLO = None  # type: ignore
+    logger.warning("Modulo ultralytics (YOLOE) non trovato. AI disabilitata.")
+    YOLOE = None  # type: ignore
 
 
 class YoloDetector:
-    """Inferenza YOLO: riceve un frame, restituisce bounding box grezzi."""
+    """Inferenza YOLOE: riceve un frame, restituisce bounding box grezzi."""
 
-    PLAYER_CLASS_ID = 0
-    BALL_CLASS_ID = 32
+    # Nomi classi open-vocabulary per detection
+    PLAYER_CLASS_NAME = "person"
+    BALL_CLASS_NAME = "sports ball"
     # Soglie morfologiche per il filtraggio del pallone
     MAX_BALL_SIZE_RATIO: float = 0.20   # La palla non deve superare il 20% del lato minore
     MAX_BALL_ASPECT_RATIO: float = 3.0  # Aspect ratio massimo accettabile (filtra allucinazioni)
 
-    def __init__(self, model_name: str = "assets/yolo26n.pt", ball_conf_thresh: float = 0.4) -> None:
+    def __init__(self, model_name: str = "assets/yoloe-26m-seg.pt", ball_conf_thresh: float = 0.4) -> None:
         self.device, self.use_half = self._detect_device()
-        self.model: Any = self._load_model(model_name)
+        resolved_path = self._resolve_model_path(model_name)
+        self.model: Any = self._load_model(resolved_path)
         self.ball_conf_thresh: float = ball_conf_thresh
         self._inference_counter = 0
+        self._class_names: Dict[int, str] = {}  # Mappa id -> nome classe dal modello
+
+    @staticmethod
+    def _resolve_model_path(base_name: str, force_pt: bool = False) -> str:
+        """Cerca versioni ottimizzate del modello (CoreML, TensorRT, ONNX) prima di usare o scaricare il file .pt.
+        
+        Se force_pt=True, bypassa la ricerca della versione ottimizzata (necessario per segmentazioni
+        con prompt dinamici, in quanto i text-embeddings dei modelli esportati sono statici e baked-in).
+        """
+        import os
+        import platform
+        import sys
+        
+        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+            base_path = sys._MEIPASS
+        else:
+            base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
+        if not os.path.isabs(base_name):
+            base_name = os.path.join(base_path, base_name)
+            
+        name_no_ext, ext = os.path.splitext(base_name)
+        
+        # Se l'utente ha esplicitamente richiesto un'estensione non .pt (es in config.json), forziamo fiduciosi
+        if ext != '.pt':
+             return base_name
+             
+        system = platform.system()
+        has_cuda = False
+        try:
+            import torch
+            has_cuda = torch.cuda.is_available()
+        except Exception:
+            pass
+            
+        optimized_exts = []
+        if system == "Darwin":
+            optimized_exts = [".mlpackage", "_mac.mlpackage"]
+        elif has_cuda:
+            optimized_exts = [".engine"]
+        else:
+            optimized_exts = [".onnx"]
+            
+        if not force_pt:
+            for opt_ext in optimized_exts:
+                opt_path = name_no_ext + opt_ext
+                if os.path.exists(opt_path):
+                    logger.info(f"YOLOE: Modello ottimizzato rilevato e selezionato: {opt_path}")
+                    return opt_path
+                
+        # Se non c'è la versione ottimizzata, cerchiamo il fallback .pt
+        if os.path.exists(base_name):
+            logger.info(f"YOLOE: Rilevato il base .pt: {base_name}. Utilizza scripts/export_model.py per ottimizzarlo.")
+            return base_name
+            
+        # Altrimenti, scarica automatico
+        logger.warning(f"YOLOE: Modello non trovato. Avvio download automatico...")
+        os.makedirs(os.path.dirname(base_name), exist_ok=True)
+        try:
+            import urllib.request
+            filename = os.path.basename(base_name)
+            url = f"https://github.com/ultralytics/assets/releases/download/v8.4.0/{filename}"
+            
+            def report_progress(block_num, block_size, total_size):
+                if total_size > 0:
+                    percent = min(int(block_num * block_size * 100 / total_size), 100)
+                    sys.stdout.write(f"\rScaricamento {filename}: {percent}%")
+                    sys.stdout.flush()
+
+            urllib.request.urlretrieve(url, base_name, reporthook=report_progress)
+            sys.stdout.write("\n")
+            logger.info(f"YOLOE: Download di {filename} completato con successo.")
+        except Exception as e:
+            logger.error(f"YOLOE: Errore nel download automatico: {e}")
+            
+        return base_name
 
     @staticmethod
     def _detect_device() -> Tuple[str, bool]:
@@ -46,10 +129,10 @@ class YoloDetector:
                 use_half = True
             elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
                 device = "mps"
-                use_half = True
+                use_half = False  # YOLOE text embeddings non supportano half su MPS
         except ImportError:
             pass
-        logger.info(f"YOLO configurato per usare device: {device}, precisione half: {use_half}")
+        logger.info(f"YOLOE configurato per usare device: {device}, precisione half: {use_half}")
         return device, use_half
 
     def detect(self, frame: np.ndarray, imgsz: int = 640) -> Tuple[List[Detection], Optional[Detection]]:
@@ -59,7 +142,7 @@ class YoloDetector:
 
         try:
             results = self.model.predict(source=frame, imgsz=imgsz, verbose=False, half=self.use_half,
-                                         device=self.device, classes=[self.PLAYER_CLASS_ID, self.BALL_CLASS_ID])
+                                         device=self.device)
         except Exception as e:
             self._free_memory()
             raise e
@@ -73,8 +156,10 @@ class YoloDetector:
         raw_ball: Optional[Detection] = None
 
         img_h, img_w = frame.shape[:2]
-        # La palla non dovrebbe mai occupare più del 15% o 20% della dimensione minore dello schermo
-        max_ball_dim = min(img_w, img_h) * 0.20
+
+        # Aggiorna la mappa nomi classi dal modello
+        if hasattr(results[0], 'names') and results[0].names:
+            self._class_names = results[0].names
 
         for box in results[0].boxes:
             detection = self._parse_box(box)
@@ -82,9 +167,11 @@ class YoloDetector:
                 continue
 
             cls_id, entry = detection
-            if cls_id == self.PLAYER_CLASS_ID:
+            cls_name = self._class_names.get(cls_id, "").lower()
+
+            if cls_name == self.PLAYER_CLASS_NAME:
                 raw_players.append(entry)
-            elif cls_id == self.BALL_CLASS_ID:
+            elif cls_name == self.BALL_CLASS_NAME:
                 if entry.conf < self.ball_conf_thresh:
                     continue
                 
@@ -102,6 +189,81 @@ class YoloDetector:
                     raw_ball = entry
 
         return raw_players, raw_ball
+
+    def segment(self, frame: np.ndarray, text_prompts: List[str], conf: float = 0.05, imgsz: int = 640):
+        """Esegue segmentazione con text prompt tramite YOLOE.
+
+        Args:
+            frame: frame BGR da segmentare.
+            text_prompts: lista di classi testuali (es. ["basketball court"]).
+            conf: soglia di confidenza minima (default basso per superfici ampie).
+            imgsz: dimensione immagine per l'inferenza.
+
+        Returns:
+            Tupla (masks, scores) dove masks è un array numpy di maschere binarie
+            e scores le relative confidenze, oppure (None, None) in caso di errore.
+        """
+        if YOLOE is None:
+            logger.error("Segmentazione YOLOE: modulo ultralytics non disponibile.")
+            return None, None
+
+        try:
+            import os
+            import sys
+
+            if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+                base_path = sys._MEIPASS
+            else:
+                base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
+            model_base = os.path.join(base_path, "assets", "yoloe-26m-seg.pt")
+            
+            # Forza l'uso del .pt per la ROI perché i formati esportati (mlpackage/engine)
+            # nascono con i text embeddings del training/export statici (person/ball). 
+            # I custom prompt dinamici richiedono il grafo PyTorch originale modificabile runtime.
+            model_path = self._resolve_model_path(model_base, force_pt=True)
+
+            # Crea un'istanza separata per la segmentazione con text prompt
+            seg_model = YOLOE(model_path)
+            seg_model.set_classes(text_prompts)
+
+            results = seg_model.predict(
+                source=frame,
+                imgsz=imgsz,
+                conf=conf,
+                verbose=False,
+                device=self.device,
+                half=self.use_half,
+            )
+
+            if results is None or len(results) == 0:
+                logger.warning("Segmentazione YOLOE: nessun risultato dal modello.")
+                return None, None
+
+            result = results[0]
+
+            # Log diagnostico
+            n_boxes = len(result.boxes) if result.boxes is not None else 0
+            logger.info("Segmentazione YOLOE: %d detection trovate (conf >= %.2f).", n_boxes, conf)
+            for b in result.boxes:
+                cls_id = int(b.cls[0])
+                cls_name = result.names.get(cls_id, "?")
+                c = float(b.conf[0])
+                logger.info("  → cls=%d (%s) conf=%.3f", cls_id, cls_name, c)
+
+            if result.masks is None or result.masks.data is None:
+                logger.warning("Segmentazione YOLOE: nessuna maschera prodotta.")
+                return None, None
+
+            masks = result.masks.data.cpu().numpy()
+            masks = (masks >= 0.5).astype(np.uint8)
+            scores = result.boxes.conf.cpu().numpy() if result.boxes is not None else None
+            logger.info("Segmentazione YOLOE: %d maschere estratte.", len(masks))
+            return masks, scores
+
+        except Exception as e:
+            logger.error("Segmentazione YOLOE: errore: %s", e)
+            return None, None
 
     def _free_memory_async(self) -> None:
         """Avvia la pulizia memoria in background per non bloccare il thread di inferenza."""
@@ -122,55 +284,25 @@ class YoloDetector:
             pass
 
     def _load_model(self, model_path: str) -> Any:
-        """Tenta il caricamento del modello YOLO e applica accelerazione hardware."""
-        if YOLO is None:
+        """Tenta il caricamento del modello YOLOE e configura le classi di detection."""
+        if YOLOE is None:
             return None
             
         import sys
         import os
         
-        # Gestione export CoreML o ONNX platform-aware
-        base_name, _ = os.path.splitext(model_path)
-        optimized_path = model_path
-        
-        if sys.platform == "darwin":
-            mlpackage_path = base_name + ".mlpackage"
-            if os.path.exists(mlpackage_path):
-                optimized_path = mlpackage_path
-                logger.info(f"Trovato modello CoreML per macOS: {optimized_path}")
-            else:
-                logger.info(f"Modello Ottimizzato non trovato. Esportazione automatica in CoreML per {model_path} in corso, attendere...")
-                try:
-                    temp_model = YOLO(model_path, task='detect')
-                    temp_model.export(format="coreml", nms=True)
-                    if os.path.exists(mlpackage_path):
-                        optimized_path = mlpackage_path
-                        logger.info(f"Esportazione terminata. ORA Carico {optimized_path}!")
-                except Exception as e:
-                    logger.error(f"Errore durante esportazione automatica: {e}")
-        else:
-            onnx_path = base_name + ".onnx"
-            engine_path = base_name + ".engine"
-            if os.path.exists(onnx_path):
-                optimized_path = onnx_path
-                logger.info(f"Trovato modello ONNX per PC: {optimized_path}")
-            elif os.path.exists(engine_path):
-                optimized_path = engine_path
-                logger.info(f"Trovato modello TensorRT per PC: {optimized_path}")
-            else:
-                logger.info(f"Modello Ottimizzato non trovato. Esportazione automatica in ONNX per {model_path} in corso, attendere...")
-                try:
-                    temp_model = YOLO(model_path, task='detect')
-                    temp_model.export(format="onnx", opset=12, half=self.use_half, device=self.device)
-                    if os.path.exists(onnx_path):
-                        optimized_path = onnx_path
-                        logger.info(f"Esportazione terminata. ORA Carico {optimized_path}!")
-                except Exception as e:
-                    logger.error(f"Errore durante esportazione automatica: {e}")
-                
         try:
-            model = YOLO(optimized_path, task='detect')
-            if optimized_path.endswith('.pt') and self.device != "cpu":
+            model = YOLOE(model_path)
+
+            # set_classes funziona (e serve) SOLO sui modelli PyTorch nativi (.pt).
+            # I modelli ottimizzati (.mlpackage, .engine, etc.) hanno le classi 'baked in' durante l'export script.
+            if model_path.endswith('.pt'):
+                model.set_classes([self.PLAYER_CLASS_NAME, self.BALL_CLASS_NAME])
+                logger.info(f"YOLOE: classi impostate su dinamico: [{self.PLAYER_CLASS_NAME}, {self.BALL_CLASS_NAME}]")
+            else:
+                logger.info(f"YOLOE: usa modello ottimizzato. I test embeddings sono statici nel grafo pre-compilato.")
+
+            if model_path.endswith('.pt') and self.device != "cpu":
                 try:
                     model.to(self.device)
                     logger.info(f"Modello caricato su acceleratore hardware {self.device}.")
@@ -178,7 +310,7 @@ class YoloDetector:
                     logger.warning(f"Impossibile spostare il modello su {self.device}: {e}")
             return model
         except Exception as e:
-            logger.error(f"Errore caricamento modello {optimized_path}: {e}")
+            logger.error(f"Errore caricamento modello {model_path}: {e}")
             return None
 
     @staticmethod
