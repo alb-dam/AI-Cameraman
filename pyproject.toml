@@ -1,0 +1,59 @@
+# Per installare le dipendenze usando l'index-url dedicato:
+# pip install -e ".[dev]" --extra-index-url https://download.pytorch.org/whl/cu128
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "AI-Cameraman"
+version = "1.0.0"
+description = "AI Cameraman - Gestione automatizzata delle riprese"
+authors = [
+    { name = "alb-dam" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "torch==2.7.1",
+    "torchvision==0.22.1",
+    "ultralytics",
+    "PySide6",
+    "opencv-python",
+    "numpy",
+    "cyndilib",
+    "pygrabber; sys_platform == 'win32'",
+    "onnx; sys_platform == 'win32'",
+    "onnxruntime-gpu; sys_platform == 'win32'",
+    "pyobjc-framework-AVFoundation; sys_platform == 'darwin'"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "pytest-mock",
+    "ruff",
+    "mypy"
+]
+
+[tool.pytest.ini_options]
+pythonpath = [".", "src"]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = []
+
+[tool.mypy]
+python_version = "3.13"
+ignore_missing_imports = true
+warn_unused_configs = true
+check_untyped_defs = true
+
+[tool.setuptools.packages.find]
+where = ["src"]
