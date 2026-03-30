@@ -4,7 +4,6 @@ from typing import Protocol, Any, Tuple, Optional, Callable, List, Union
 
 import numpy as np
 
-from config.settings import SettingsManager
 from core.models import Detection, DetectionResult, CameraInstruction, FrameMetadata
 
 
@@ -102,13 +101,17 @@ class IRuntimeState(Protocol):
 
 
 class IPipeline(Protocol):
+    roi_manager: IROIManager
     def run_inference(self, frame: np.ndarray) -> Any: ...
-    def run_tracking_and_directing(self, frame: np.ndarray, det_out: Any, metadata: FrameMetadata) -> Tuple[np.ndarray, np.ndarray]: ...
+    def run_tracking_and_directing(self, frame: np.ndarray, det_out: Any, metadata: FrameMetadata) -> Tuple[np.ndarray, Optional[np.ndarray]]: ...
 
 
 class IController(Protocol):
     state: IRuntimeState
     pipeline: IPipeline
+    
+    @property
+    def roi_manager(self) -> IROIManager: ...
     
     def start(self) -> None: ...
     def stop(self) -> None: ...

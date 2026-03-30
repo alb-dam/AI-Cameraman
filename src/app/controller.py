@@ -10,7 +10,7 @@ import numpy as np
 from core.models import FrameMetadata
 from core.thread_manager import DropFrameQueue, WorkerThread
 from config.settings import SettingsManager
-from core.interfaces import IRuntimeState, IPipeline, IVideoInput, IVideoOutput, IPerformanceMonitor
+from core.interfaces import IRuntimeState, IPipeline, IVideoInput, IVideoOutput, IPerformanceMonitor, IROIManager
 from video.output import VideoOutput
 from app.logger import get_logger
 

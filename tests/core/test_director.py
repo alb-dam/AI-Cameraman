@@ -1,5 +1,3 @@
-import pytest
-import numpy as np
 from core.director import Director, director_run, VirtualPTZModel
 
 

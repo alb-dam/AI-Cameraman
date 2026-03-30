@@ -16,9 +16,9 @@ class PerformanceMonitor(IPerformanceMonitor):
         
         # Buffer per i tempi: usiamo deques con limite fisso per memoria O(1)
         self._max_history = 60
-        self._capture_times = deque(maxlen=self._max_history)
-        self._inference_times = deque(maxlen=self._max_history)
-        self._render_times = deque(maxlen=self._max_history)
+        self._capture_times: deque = deque(maxlen=self._max_history)
+        self._inference_times: deque = deque(maxlen=self._max_history)
+        self._render_times: deque = deque(maxlen=self._max_history)
         
         # Latenza end-to-end dell'ultimo frame elaborato
         self._last_latency = 0.0
@@ -32,15 +32,18 @@ class PerformanceMonitor(IPerformanceMonitor):
         return bool(self.settings.get("enable_performance_monitor"))
 
     def mark_capture(self, frame_id: int) -> None:
-        if not self.enabled: return
+        if not self.enabled:
+            return
         self._capture_times.append(time.time())
 
     def mark_inference(self, frame_id: int) -> None:
-        if not self.enabled: return
+        if not self.enabled:
+            return
         self._inference_times.append(time.time())
 
     def mark_render(self, frame_id: int, capture_time: float) -> None:
-        if not self.enabled: return
+        if not self.enabled:
+            return
         now = time.time()
         self._render_times.append(now)
         
@@ -52,7 +55,8 @@ class PerformanceMonitor(IPerformanceMonitor):
             self._last_log_time = now
 
     def log_stats(self) -> None:
-        if not self.enabled: return
+        if not self.enabled:
+            return
         
         cap_fps = self._calculate_fps(self._capture_times)
         inf_fps = self._calculate_fps(self._inference_times)

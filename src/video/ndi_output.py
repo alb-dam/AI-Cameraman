@@ -5,7 +5,7 @@ import cv2
 from fractions import Fraction
 from typing import Optional
 
-from cyndilib import Sender, VideoSendFrame, FourCC
+from cyndilib import Sender, VideoSendFrame, FourCC  # type: ignore
 
 from app.logger import get_logger
 
@@ -76,10 +76,12 @@ class NDISender:
             
             # Copia i bytes nel buffer pre-allocato
             raw = bgra.tobytes()
-            self._frame_buffer[:len(raw)] = raw
+            if self._frame_buffer is not None:
+                self._frame_buffer[:len(raw)] = raw
             
             # Invio asincrono NDI (non blocca il thread)
-            self._sender.write_video_async(self._frame_view)
+            if self._frame_view is not None:
+                self._sender.write_video_async(self._frame_view)
         except Exception as e:
             logger.error(f"Errore invio frame NDI '{self.name}': {e}")
 

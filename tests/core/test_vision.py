@@ -1,4 +1,3 @@
-import pytest
 import numpy as np
 from core.vision import SimpleKalman, KalmanTracker, OutlierFilter
 from core.models import TrackedObject

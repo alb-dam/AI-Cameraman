@@ -1,7 +1,6 @@
 """Test unitari per ROIManager.filter_detections_by_feet()."""
 
 import pytest
-import numpy as np
 
 from core.roi import ROIManager
 from core.models import Detection

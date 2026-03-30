@@ -1,6 +1,5 @@
 """Test unitari per ActionCenterCalculator (core/tracking.py)."""
 
-import pytest
 from core.tracking import ActionCenterCalculator
 from core.models import TrackedObject
 

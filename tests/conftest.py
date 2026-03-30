@@ -2,7 +2,7 @@ import pytest
 import numpy as np
 from typing import Tuple
 
-from core.models import Detection, TrackedObject, CameraInstruction, ROI
+from core.models import Detection, TrackedObject
 
 @pytest.fixture
 def mock_detection():

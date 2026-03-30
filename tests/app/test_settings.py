@@ -1,9 +1,6 @@
 """Test unitari per SettingsManager."""
 
-import os
-import json
 import pytest
-import tempfile
 from config.settings import AppSettings, SettingsManager
 
 

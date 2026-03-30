@@ -1,6 +1,6 @@
 """Pannello di preview video con supporto editing ROI."""
 
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
 import cv2
 import numpy as np
@@ -23,7 +23,7 @@ class PreviewPanel(QWidget):
 
     # ── Inizializzazione ────────────────────────────────────────────────
 
-    def __init__(self, parent: QWidget = None) -> None:
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         """Crea la label preview con aspect ratio fisso."""
         super().__init__(parent)
 
@@ -40,7 +40,7 @@ class PreviewPanel(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
 
         self.preview_label = QLabel("Nessun segnale video in corso")
-        self.preview_label.setAlignment(Qt.AlignCenter)
+        self.preview_label.setAlignment(Qt.AlignCenter)  # type: ignore
         self.preview_label.setStyleSheet("background-color: black; color: white;")
         self.preview_label.setMinimumSize(320, 180)
         self.preview_label.installEventFilter(self)
@@ -64,9 +64,9 @@ class PreviewPanel(QWidget):
         h, w, ch = rgb_image.shape
         bytes_per_line = ch * w
 
-        qt_img = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format_RGB888)
+        qt_img = QImage(rgb_image.data, w, h, bytes_per_line, QImage.Format_RGB888)  # type: ignore
         pixmap = QPixmap.fromImage(qt_img)
-        scaled = pixmap.scaled(self.preview_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        scaled = pixmap.scaled(self.preview_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)  # type: ignore
         self.preview_label.setPixmap(scaled)
 
     def draw_roi_overlay(self, frame: np.ndarray,
@@ -107,12 +107,12 @@ class PreviewPanel(QWidget):
         if source != self.preview_label or not self._roi_editing:
             return super().eventFilter(source, event)
 
-        if event.type() != QEvent.MouseButtonPress:
+        if event.type() != QEvent.MouseButtonPress:  # type: ignore
             return super().eventFilter(source, event)
 
-        if event.button() == Qt.LeftButton:
-            self._handle_roi_click(event.position())
-        elif event.button() == Qt.RightButton:
+        if event.button() == Qt.LeftButton:  # type: ignore
+            self._handle_roi_click(event.position())  # type: ignore
+        elif event.button() == Qt.RightButton:  # type: ignore
             self.roi_finalized.emit()
         return True
 
@@ -134,6 +134,6 @@ class PreviewPanel(QWidget):
             self.roi_point_added.emit(norm_x, norm_y)
 
 
-def preview_panel_run(parent: QWidget = None) -> PreviewPanel:
+def preview_panel_run(parent: Optional[QWidget] = None) -> PreviewPanel:
     """Crea e ritorna un'istanza di PreviewPanel."""
     return PreviewPanel(parent)

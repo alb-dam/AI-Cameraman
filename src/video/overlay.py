@@ -5,13 +5,12 @@ Nessuna logica AI. Riceve dati strutturati e li visualizza sul frame.
 
 import cv2
 import numpy as np
-from typing import Dict, Any
+from typing import Any
 
+from core.models import DetectionResult, CameraInstruction, FrameMetadata
 from app.logger import get_logger
 
 logger = get_logger(__name__)
-
-from core.models import DetectionResult, CameraInstruction, FrameMetadata
 
 
 class DebugOverlay:

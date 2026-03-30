@@ -3,11 +3,11 @@
 Layout a griglia orizzontale, ottimizzato per finestre piccole (640×360).
 """
 
-from typing import Any, Dict, List, Tuple, Union
+from typing import Dict, List, Union, Optional
 
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                                QComboBox, QCheckBox, QSlider, QLabel,
-                               QGroupBox, QGridLayout, QSizePolicy)
+                               QGridLayout, QSizePolicy)
 from PySide6.QtCore import Qt, Signal
 
 
@@ -35,7 +35,7 @@ class ControlPanel(QWidget):
 
     # ── Inizializzazione ────────────────────────────────────────────────
 
-    def __init__(self, parent: QWidget = None) -> None:
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         """Crea il layout e tutti i widget del pannello controlli."""
         super().__init__(parent)
         self._setup_ui()
@@ -54,7 +54,7 @@ class ControlPanel(QWidget):
         row1.setSpacing(8)
         row1.addWidget(QLabel("Sorgente:"))
         self.source_combo = QComboBox()
-        self.source_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.source_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)  # type: ignore
         row1.addWidget(self.source_combo)
         self.file_btn = QPushButton("Apri File")
         self.file_btn.setVisible(False)
@@ -78,22 +78,22 @@ class ControlPanel(QWidget):
         slider_grid.setSpacing(4)
 
         slider_grid.addWidget(QLabel("Zoom Fisso:"), 0, 0)
-        self.fixed_zoom_slider = QSlider(Qt.Horizontal)
+        self.fixed_zoom_slider = QSlider(Qt.Horizontal)  # type: ignore
         self.fixed_zoom_slider.setRange(0, 100)
         slider_grid.addWidget(self.fixed_zoom_slider, 0, 1)
 
         slider_grid.addWidget(QLabel("Zoom Dinamico:"), 0, 2)
-        self.dynamic_zoom_slider = QSlider(Qt.Horizontal)
+        self.dynamic_zoom_slider = QSlider(Qt.Horizontal)  # type: ignore
         self.dynamic_zoom_slider.setRange(0, 100)
         slider_grid.addWidget(self.dynamic_zoom_slider, 0, 3)
 
         slider_grid.addWidget(QLabel("Tolleranza:"), 1, 0)
-        self.deadzone_slider = QSlider(Qt.Horizontal)
+        self.deadzone_slider = QSlider(Qt.Horizontal)  # type: ignore
         self.deadzone_slider.setRange(0, 100)
         slider_grid.addWidget(self.deadzone_slider, 1, 1)
 
         slider_grid.addWidget(QLabel("Velocità Regia:"), 1, 2)
-        self.inertia_slider = QSlider(Qt.Horizontal)
+        self.inertia_slider = QSlider(Qt.Horizontal)  # type: ignore
         self.inertia_slider.setRange(0, 100)
         slider_grid.addWidget(self.inertia_slider, 1, 3)
 
@@ -203,6 +203,6 @@ class ControlPanel(QWidget):
         self.file_btn.setVisible(visible)
 
 
-def control_panel_run(parent: QWidget = None) -> ControlPanel:
+def control_panel_run(parent: Optional[QWidget] = None) -> ControlPanel:
     """Crea e ritorna un'istanza di ControlPanel."""
     return ControlPanel(parent)

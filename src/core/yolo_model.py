@@ -67,7 +67,7 @@ class YoloDetector:
 
         if not os.path.exists(clip_path):
             import urllib.request
-            logger.warning(f"YOLOE: mobileclip2_b.ts non trovato in assets/. Avvio download...")
+            logger.warning("YOLOE: mobileclip2_b.ts non trovato in assets/. Avvio download...")
             url = "https://github.com/ultralytics/assets/releases/download/v8.4.0/mobileclip2_b.ts"
             try:
                 def report_progress(block_num, block_size, total_size):
@@ -136,7 +136,7 @@ class YoloDetector:
             return base_name
             
         # Altrimenti, scarica automatico
-        logger.warning(f"YOLOE: Modello non trovato. Avvio download automatico...")
+        logger.warning("YOLOE: Modello non trovato. Avvio download automatico...")
         os.makedirs(os.path.dirname(base_name), exist_ok=True)
         try:
             import urllib.request
@@ -328,8 +328,6 @@ class YoloDetector:
         if YOLOE is None:
             return None
             
-        import sys
-        import os
         
         try:
             model = YOLOE(model_path)
@@ -340,7 +338,7 @@ class YoloDetector:
                 model.set_classes([self.PLAYER_CLASS_NAME, self.BALL_CLASS_NAME])
                 logger.info(f"YOLOE: classi impostate su dinamico: [{self.PLAYER_CLASS_NAME}, {self.BALL_CLASS_NAME}]")
             else:
-                logger.info(f"YOLOE: usa modello ottimizzato. I test embeddings sono statici nel grafo pre-compilato.")
+                logger.info("YOLOE: usa modello ottimizzato. I test embeddings sono statici nel grafo pre-compilato.")
 
             if model_path.endswith('.pt') and self.device != "cpu":
                 try:

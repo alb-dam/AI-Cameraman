@@ -123,12 +123,14 @@ class ROIManager:
         current_size = (w, h)
         
         # Ricostruisci la cache solo se la dimensione del frame è cambiata o la cache è vuota
-        if self._cached_mask is None or self._cached_mask_size != current_size:
+        if self.roi.polygon is not None and (self._cached_mask is None or self._cached_mask_size != current_size):
             self._cached_mask = GeometryService.build_polygon_mask(self.roi.polygon, w, h)
             self._cached_mask_size = current_size
             logger.debug("ROI mask cache rigenerata per dimensione %dx%d", w, h)
         
-        return GeometryService.apply_precomputed_mask(frame, self._cached_mask)
+        if self._cached_mask is not None:
+            return GeometryService.apply_precomputed_mask(frame, self._cached_mask)
+        return frame
 
     def filter_detections_by_feet(
         self,
@@ -208,11 +210,11 @@ class ROIManager:
 
             # 3. CLAHE (contrasto adattivo) + riduzione esposizione per esaltare il campo
             lab = cv2.cvtColor(median_frame, cv2.COLOR_BGR2LAB)
-            l, a, b = cv2.split(lab)
+            l_channel, a, b = cv2.split(lab)
             clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
-            l = clahe.apply(l)
-            l = np.clip(l * 0.8, 0, 255).astype(np.uint8)  # riduzione esposizione 20%
-            lab = cv2.merge([l, a, b])
+            l_channel = clahe.apply(l_channel)
+            l_channel = np.clip(l_channel * 0.8, 0, 255).astype(np.uint8)  # riduzione esposizione 20%
+            lab = cv2.merge([l_channel, a, b])
             median_frame = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
 
             os.makedirs("tmp", exist_ok=True)

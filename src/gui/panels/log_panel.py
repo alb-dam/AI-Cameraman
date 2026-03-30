@@ -1,5 +1,6 @@
 """Pannello log testuale."""
 
+from typing import Optional
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QTextEdit
 
 
@@ -8,7 +9,7 @@ class LogPanel(QWidget):
 
     # ── Inizializzazione ────────────────────────────────────────────────
 
-    def __init__(self, parent: QWidget = None) -> None:
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
         """Crea il widget log con QTextEdit read-only."""
         super().__init__(parent)
         self._setup_ui()
@@ -38,6 +39,6 @@ class LogPanel(QWidget):
         scrollbar.setValue(scrollbar.maximum())
 
 
-def log_panel_run(parent: QWidget = None) -> LogPanel:
+def log_panel_run(parent: Optional[QWidget] = None) -> LogPanel:
     """Crea e ritorna un'istanza di LogPanel."""
     return LogPanel(parent)

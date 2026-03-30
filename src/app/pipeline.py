@@ -1,6 +1,6 @@
 """Pipeline di elaborazione frame: Input -> Detection -> Directing -> Output."""
 
-from typing import Tuple, Any
+from typing import Tuple, Any, Optional
 import numpy as np
 
 from config.settings import SettingsManager
@@ -43,7 +43,8 @@ class FramePipeline:
         # YOLO riceve il frame completo per rilevare i giocatori interi
         # (anche quelli al bordo della ROI). Il filtraggio avviene post-detection tramite callback.
         h, w = frame.shape[:2]
-        feet_filter = lambda dets: self.roi_manager.filter_detections_by_feet(dets, w, h)
+        def feet_filter(dets):
+            return self.roi_manager.filter_detections_by_feet(dets, w, h)
         
         det_out = self.detector.process(
             frame,
@@ -52,7 +53,7 @@ class FramePipeline:
         )
         return det_out
 
-    def run_tracking_and_directing(self, frame: np.ndarray, det_out: Any, metadata: FrameMetadata) -> Tuple[np.ndarray, np.ndarray]:
+    def run_tracking_and_directing(self, frame: np.ndarray, det_out: Any, metadata: FrameMetadata) -> Tuple[np.ndarray, Optional[np.ndarray]]:
         """Esegue il tracking (Kalman) e la regia per produrre l'output."""
         self._maybe_apply_director_config()
         

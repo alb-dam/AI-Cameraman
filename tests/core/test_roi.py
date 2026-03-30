@@ -1,6 +1,4 @@
-import pytest
 import numpy as np
-import os
 from core.roi import ROIManager
 
 class TestROIManager:

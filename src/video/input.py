@@ -27,7 +27,7 @@ class VideoInput:
 
         if sistema == 'Windows':
             try:
-                from pygrabber.dshow_graph import FilterGraph
+                from pygrabber.dshow_graph import FilterGraph  # type: ignore
                 devices: List[str] = FilterGraph().get_input_devices()  # type: ignore
                 return devices
             except ImportError:

@@ -7,8 +7,7 @@ Architettura interna:
 """
 
 import numpy as np
-from dataclasses import dataclass, field
-from typing import List, Dict, Any, Tuple, Optional, Callable
+from typing import List, Dict, Tuple, Optional, Callable
 
 from core.yolo_model import YoloDetector
 from core.tracking import ActionCenterCalculator

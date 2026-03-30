@@ -95,7 +95,7 @@ def export_model():
     
     try:
         exported_path = model.export(format=export_format, **export_kwargs)
-        logger.info(f"✅ Esportazione completata con successo!")
+        logger.info("✅ Esportazione completata con successo!")
         logger.info(f"Modello salvato in: {exported_path}")
         logger.info("L'applicazione lo rileverà automaticamente se il suo nome verrà aggiornato nella configurazione o se l'estensione supportata è preferita dall'app.")
     except Exception as e:

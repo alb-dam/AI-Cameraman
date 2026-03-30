@@ -9,7 +9,7 @@ import logging
 import os
 import tempfile
 from dataclasses import dataclass, asdict, fields
-from typing import Optional
+from typing import Optional, Any
 
 logger = logging.getLogger(__name__)
 
@@ -84,20 +84,20 @@ class SettingsManager:
         """Ritorna la versione corrente della configurazione (dirty-flag pubblico)."""
         return self._config_version
 
-    def get(self, key: str) -> any:
+    def get(self, key: str) -> Any:
         """Restituisce il valore del setting richiesto."""
         if not hasattr(self.settings, key):
             raise KeyError(f"Chiave non valida: {key}")
         return getattr(self.settings, key)
 
-    def set(self, key: str, value: any, save_to_disk: bool = True) -> None:
+    def set(self, key: str, value: Any, save_to_disk: bool = True) -> None:
         """Imposta un setting ed esegue opzionalmente il salvataggio su disco."""
         if key not in self._field_types:
             raise KeyError(f"Chiave non valida: {key}")
 
         expected_type = self._field_types[key]
         # Float accetta anche int
-        if expected_type == float and isinstance(value, int):
+        if expected_type is float and isinstance(value, int):
             value = float(value)
         elif not isinstance(value, expected_type):
             raise TypeError(f"{key}: atteso {expected_type}, ricevuto {type(value).__name__}")
