@@ -49,48 +49,21 @@ I thread comunicano tramite **DropFrameQueue** (code a capacità limitata che sc
 AI-Cameraman/
 ├── main.py                  # Entry point dell'applicazione
 ├── config.json              # Configurazione persistente (JSON)
-├── requirements.txt         # Dipendenze Python
+├── pyproject.toml           # Configurazione di progetto e dipendenze Python
 ├── roi.json                 # ROI poligonale salvata (normalizzata 0-1)
 │
-├── app/                     # Application Layer
-│   ├── controller.py        # Lifecycle, threading, I/O video (4 worker thread)
-│   ├── factory.py           # IoC Factory: istanzia e inietta le dipendenze
-│   ├── pipeline.py          # Pipeline computazionale sincrona (YOLO → Tracking → Regia)
-│   ├── state.py             # Stato mutabile globale condiviso tra i thread
-│   └── logger.py            # Configurazione centralizzata del logging (console + file rotativo)
-│
-├── core/                    # Domain Layer (logica pura, nessuna dipendenza I/O)
-│   ├── interfaces.py        # Protocol/Interfacce per Dependency Injection
-│   ├── models.py            # Dataclass di dominio (Detection, TrackedObject, CameraInstruction, ROI, ...)
-│   ├── vision.py            # Detector: compone YOLO + KalmanTracker + ActionCenterCalculator
-│   ├── yolo_model.py        # Inferenza YOLOE isolata (detect, segment, device auto-detect)
-│   ├── director.py          # Regia virtuale: zoom, pan/tilt, smoothing, deadzone
-│   ├── tracking.py          # ActionCenterCalculator (baricentro ponderato dei giocatori)
-│   ├── roi.py               # ROIManager: persistenza, editing, maschere vettoriali, generazione YOLOE
-│   ├── geometry.py          # Servizi matematici puri (crop, maschere OpenCV, poligoni)
-│   ├── performance.py       # PerformanceMonitor: FPS per stage e latenza end-to-end
-│   └── thread_manager.py    # DropFrameQueue e WorkerThread
-│
-├── video/                   # Infrastructure Layer (I/O video)
-│   ├── input.py             # VideoInput: webcam, file, SRT (con riconnessione automatica)
-│   ├── output.py            # VideoOutput: dual NDI (AI + Native) con letterbox
-│   ├── ndi_output.py        # NDISender: wrapper cyndilib con buffer pre-allocato
-│   └── overlay.py           # DebugOverlay: disegno bbox, tracking, crop, FPS
-│
-├── gui/                     # Presentation Layer (PySide6)
-│   ├── main_window.py       # Finestra principale: orchestrazione pannelli + segnali Qt
-│   └── panels/
-│       ├── control_panel.py # Pannello controlli: sorgente, zoom, kalman, ROI, output
-│       ├── preview_panel.py # Preview video live con editing ROI interattivo
-│       └── log_panel.py     # Pannello log messaggi
+├── src/                     # Codice sorgente dell'applicazione
+│   ├── app/                 # Application Layer (controller, threading, pipeline, state)
+│   ├── core/                # Domain Layer (logica pura: YOLO, Kalman, regia, geometria)
+│   ├── config/              # Configurazione e costanti del progetto
+│   ├── video/               # Infrastructure Layer (I/O video, webcam, stream NDI/SRT)
+│   └── gui/                 # Presentation Layer (PySide6, finestre, pannelli)
 │
 ├── assets/                  # Modelli AI (non versionati in git)
-│   └── yoloe-26m-seg.pt     # Modello YOLOE-26m-seg (detection + segmentazione)
+│   ├── yoloe-26s-seg.pt     # Modello base YOLOE (le dimensioni e versione possono variare)
+│   └── yoloe-...mlpackage   # Modelli ottimizzati per CoreML / TensorRT / ONNX (se esportati)
 │
 ├── tests/                   # Test suite (pytest)
-│   ├── conftest.py          # Fixture condivise
-│   ├── app/                 # Test del layer applicativo
-│   └── core/                # Test del layer di dominio
 │
 └── logs/                    # Log rotativi (max 5MB × 3 backup)
 ```
@@ -101,9 +74,9 @@ AI-Cameraman/
 
 ### Prerequisiti
 
-- **Python 3.10+**
+- **Python 3.13+**
 - **NDI Runtime** installato sul sistema ([download NDI Tools](https://ndi.video/tools/))
-- **GPU** (consigliata): NVIDIA con CUDA, oppure Apple Silicon (MPS)
+- **GPU** (consigliata): NVIDIA con CUDA, oppure Apple Silicon (CoreML/MPS)
 
 ### Setup
 
@@ -118,10 +91,12 @@ source .venv/bin/activate  # Linux/macOS
 # .venv\Scripts\activate   # Windows
 
 # 3. Installa le dipendenze
-pip install -r requirements.txt
+# Per installare in modalità sviluppo (editable) con i tool di testing:
+pip install -e ".[dev]"
 ```
 
-> **Nota:** Su Windows le dipendenze PyTorch vengono scaricate automaticamente dal registry CUDA 12.8 grazie all'`--extra-index-url` nel `requirements.txt`.
+> **Nota:** Su Windows (CUDA), puoi specificare l'`extra-index-url` per installare la versione PyTorch ottimizzata direttamente:
+> `pip install -e ".[dev]" --extra-index-url https://download.pytorch.org/whl/cu128`
 
 ### Modelli AI
 
@@ -212,7 +187,7 @@ La configurazione è persistente nel file `config.json`, modificabile sia dalla 
 pytest
 
 # Con report di copertura
-pytest --cov=app --cov=core --cov=video
+pytest --cov=src
 ```
 
 ---
