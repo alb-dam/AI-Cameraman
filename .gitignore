@@ -7,6 +7,8 @@
 *.png
 *.json
 *.zip
+
+# Assets
 assets/
 
 # Virtual environments

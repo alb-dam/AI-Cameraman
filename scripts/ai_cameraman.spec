@@ -16,13 +16,20 @@ PROJECT_ROOT = os.path.abspath(os.path.join(SPECPATH, '..'))
 SRC_DIR = os.path.join(PROJECT_ROOT, 'src')
 
 # ── Data files ──────────────────────────────────────────────────────────
-# Modelli AI e file di configurazione da includere nel bundle
-datas = [
+datas_candidates = [
     (os.path.join(PROJECT_ROOT, 'assets', 'yoloe-26s-seg.pt'), 'assets'),
+    (os.path.join(PROJECT_ROOT, 'assets', 'yoloe-26s-seg.mlpackage'), 'assets'),
     (os.path.join(PROJECT_ROOT, 'assets', 'mobileclip2_b.ts'), 'assets'),
     (os.path.join(PROJECT_ROOT, 'assets', 'logo.png'), 'assets'),
     (os.path.join(PROJECT_ROOT, 'tmp', 'config.json'), 'tmp'),
 ]
+
+datas = []
+for file_path, target_dir in datas_candidates:
+    if os.path.exists(file_path):
+        datas.append((file_path, target_dir))
+    else:
+        print(f"WARNING: File {file_path} non trovato, pyinstaller lo salterà.")
 
 # Raccogli data files dai pacchetti che ne hanno bisogno
 datas += collect_data_files('ultralytics')
@@ -151,10 +158,11 @@ coll = COLLECT(
 
 # ── macOS App Bundle (opzionale) ────────────────────────────────────────
 if sys.platform == 'darwin':
+    icon_path = os.path.join(PROJECT_ROOT, 'assets', 'logo.icns')
     app = BUNDLE(
         coll,
         name='AI-Cameraman.app',
-        icon=os.path.join(PROJECT_ROOT, 'assets', 'logo.icns'),  # Aggiunto il logo .icns
+        icon=icon_path if os.path.exists(icon_path) else None,
         bundle_identifier='com.aicameraman.app',
         info_plist={
             'CFBundleName': 'AI-Cameraman',
