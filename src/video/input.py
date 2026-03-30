@@ -52,7 +52,11 @@ class VideoInput:
 
 
         if source_type == "webcam":
-            cam_index = int(source_value) if source_value is not None else 0
+            try:
+                cam_index = int(source_value) if source_value not in (None, "") else 0
+            except (ValueError, TypeError):
+                cam_index = 0
+                
             if sys.platform == "darwin":
                 self.cap = cv2.VideoCapture(cam_index, cv2.CAP_AVFOUNDATION)
             else:
