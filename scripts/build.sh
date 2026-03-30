@@ -32,7 +32,7 @@ rm -rf build/ dist/
 # 4. Build
 echo ""
 echo "🔨 Avvio build PyInstaller..."
-echo "   ⚠️  I modelli AI pesano ~3.5 GB — il build richiederà diversi minuti."
+echo "  Il build richiederà alcuni minuti."
 echo ""
 python -m PyInstaller scripts/ai_cameraman.spec --noconfirm
 
