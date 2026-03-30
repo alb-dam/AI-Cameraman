@@ -40,9 +40,12 @@ class ApplicationController:
         self.stop_event = threading.Event()
         
         # Le code DropFrame per garantire latenza minima ed evitare accumulo
-        self.q_capture_to_inference = DropFrameQueue(maxsize=2)
-        self.q_inference_to_tracking = DropFrameQueue(maxsize=2)
-        self.q_tracking_to_render = DropFrameQueue(maxsize=2)
+        # Usiamo maxsize alto (es. 30) per evitare che i picchi computazionali di YOLO (ogni N frame)
+        # causino il drop dei frame antecedenti all'inferenza. Il drop distruggerebbe il pacing del tracker
+        # e causerebbe microscatti. Il drop finale avverrà solo se il render loop sarà troppo lento.
+        self.q_capture_to_inference = DropFrameQueue(maxsize=30)
+        self.q_inference_to_tracking = DropFrameQueue(maxsize=30)
+        self.q_tracking_to_render = DropFrameQueue(maxsize=30)
 
         self.capture_thread: Optional[WorkerThread] = None
         self.inference_thread: Optional[WorkerThread] = None
@@ -169,6 +172,12 @@ class ApplicationController:
         self.q_tracking_to_render.clear()
         self._empty_frames_count = 0
         self._capture_frame_id = 0
+        
+        # Pacing accumulator per timer accurato in caso di riproduzione file
+        self._render_start_time = time.time()
+        self._render_frame_count = 0
+        self._capture_start_time = time.time()
+        self._capture_frame_count = 0
 
         self.capture_thread = WorkerThread("CaptureThread", self._capture_loop, self.stop_event, error_callback=self._log_error)
         self.inference_thread = WorkerThread("InferenceThread", self._inference_loop, self.stop_event, error_callback=self._log_error)
@@ -313,9 +322,20 @@ class ApplicationController:
         self.q_capture_to_inference.put((frame, frame_id, capture_time))
 
         if is_file:
-            sleep_time = frame_duration - (time.time() - loop_start)
+            # Pacing perfetto ad accumulatore anche per il capture loop, per evitare
+            # di leggere il file file velocemente ed esaurire le DropFrameQueue.
+            # Questo assicura che in media si viaggi a 30fps (reali), limitando il rischio
+            # che la queue si riempia di 30 frame e ne droppi sfasando il timecode.
+            expected_time = getattr(self, "_capture_start_time", time.time()) + getattr(self, "_capture_frame_count", 0) * frame_duration
+            now = time.time()
+            sleep_time = expected_time - now
+            
             if sleep_time > 0:
                 time.sleep(sleep_time)
+            elif sleep_time < -1.0:
+                self._capture_start_time = now - getattr(self, "_capture_frame_count", 0) * frame_duration
+                
+            self._capture_frame_count = getattr(self, "_capture_frame_count", 0) + 1
         else:
             time.sleep(0.001)
 
@@ -434,6 +454,22 @@ class ApplicationController:
             self.state.on_frame_ready(debug_frame)
 
         self._update_fps()
+
+        # Pacing perfetto per i file video: assorbe tutto il jitter (OS/YOLO) e restituisce
+        # una scansione fluida alla GUI, emulando il sync dell'NDI quando spento.
+        if self.settings.get("source_type") == "file":
+            frame_duration = 1.0 / self.state.input_fps
+            expected_time = getattr(self, "_render_start_time", time.time()) + getattr(self, "_render_frame_count", 0) * frame_duration
+            now = time.time()
+            sleep_time = expected_time - now
+            
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+            elif sleep_time < -1.0:
+                # Se è rimasto troppo indietro (es. blocco manuale o freeze), resetta il clock
+                self._render_start_time = now - getattr(self, "_render_frame_count", 0) * frame_duration
+                
+            self._render_frame_count = getattr(self, "_render_frame_count", 0) + 1
 
     def _update_fps(self) -> None:
         self.state.frames_processed += 1
