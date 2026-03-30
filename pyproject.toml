@@ -24,7 +24,8 @@ dependencies = [
     "pygrabber; sys_platform == 'win32'",
     "onnx; sys_platform == 'win32'",
     "onnxruntime-gpu; sys_platform == 'win32'",
-    "pyobjc-framework-AVFoundation; sys_platform == 'darwin'"
+    "pyobjc-framework-AVFoundation; sys_platform == 'darwin'",
+    "clip @ git+https://github.com/openai/CLIP.git"
 ]
 
 [project.optional-dependencies]
