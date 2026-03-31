@@ -26,7 +26,7 @@ except ImportError:
 def export_model():
     # Percorso del modello
     base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-    model_path = os.path.join(base_dir, "assets", "yoloe-26s-seg.pt")
+    model_path = os.path.join(base_dir, "Data", "assets", "yoloe-26s-seg.pt")
     
     if not os.path.exists(model_path):
         logger.warning(f"Modello sorgente non trovato in: {model_path}")

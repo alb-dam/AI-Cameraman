@@ -9,6 +9,7 @@ Utilizza YOLOE-26 (open-vocabulary) per:
 """
 
 from typing import List, Dict, Any, Tuple, Optional
+import sys
 import threading
 import logging
 import numpy as np

@@ -9,7 +9,7 @@
 *.zip
 
 # Assets
-assets/
+Data/assets/
 
 # Virtual environments
 .venv
@@ -21,7 +21,7 @@ __pycache__/
 .mypy_cache/
 .pytest_cache/
 .ruff_cache/
-logs/
+Data/logs/
 *.log
 
 # Coverage

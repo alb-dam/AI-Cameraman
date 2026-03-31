@@ -23,7 +23,7 @@ class AppSettings:
     debug_mode: bool = False
     enable_performance_monitor: bool = False
     
-    last_roi_path: str = "tmp/roi.json"
+    last_roi_path: str = ""
     
     # Nomi delle sorgenti NDI
     ndi_ai_name: str = "AI-Cameraman AI"
@@ -136,7 +136,14 @@ class SettingsManager:
             
         self.settings = new_settings
         
-        if stale_keys or len(filtered_data) < len(valid_keys):
+        # Patch dinamico: se la rotta salvata è vecchia ("tmp/roi.json"), vuota o solo "roi.json",
+        # la spingiamo dinamicamente nel folder temporaneo di sistema corrente (frozen vs unfrozen).
+        from core.paths import get_tmp_path
+        if not self.settings.last_roi_path or self.settings.last_roi_path in ["tmp/roi.json", "roi.json"]:
+            self.settings.last_roi_path = os.path.join(get_tmp_path(), "roi.json")
+            
+        if stale_keys or len(filtered_data) < len(valid_keys) or getattr(self.settings, "last_roi_path", "").endswith("roi.json"):
+            # Salvataggio silenzioso per aggiornare la path risolta su disco
             self.save()
 
     def save(self) -> None:

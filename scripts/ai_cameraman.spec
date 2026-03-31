@@ -17,11 +17,11 @@ SRC_DIR = os.path.join(PROJECT_ROOT, 'src')
 
 # ── Data files ──────────────────────────────────────────────────────────
 datas_candidates = [
-    (os.path.join(PROJECT_ROOT, 'assets', 'yoloe-26s-seg.pt'), 'assets'),
-    (os.path.join(PROJECT_ROOT, 'assets', 'yoloe-26s-seg.mlpackage'), 'assets'),
-    (os.path.join(PROJECT_ROOT, 'assets', 'mobileclip2_b.ts'), 'assets'),
-    (os.path.join(PROJECT_ROOT, 'assets', 'logo.png'), 'assets'),
-    (os.path.join(PROJECT_ROOT, 'tmp', 'config.json'), 'tmp'),
+    (os.path.join(PROJECT_ROOT, 'Data', 'assets', 'yoloe-26s-seg.pt'), 'assets'),
+    (os.path.join(PROJECT_ROOT, 'Data', 'assets', 'yoloe-26s-seg.mlpackage'), 'assets'),
+    (os.path.join(PROJECT_ROOT, 'Data', 'assets', 'mobileclip2_b.ts'), 'assets'),
+    (os.path.join(PROJECT_ROOT, 'Data', 'assets', 'logo.png'), 'assets'),
+    (os.path.join(PROJECT_ROOT, 'Data', 'tmp', 'config.json'), 'tmp'),
 ]
 
 datas = []
@@ -173,3 +173,30 @@ if sys.platform == 'darwin':
             'NSCameraUsageDescription': 'AI-Cameraman necessita della camera per acquisire il video.',
         },
     )
+
+# ── Post Build Script per macOS ─────────────────────────────────────────
+if sys.platform == 'darwin':
+    print("Eseguo post-build steps per organizzare Contents/Data...")
+    app_base = os.path.join(PROJECT_ROOT, 'dist', 'AI-Cameraman.app')
+    resources_dir = os.path.join(app_base, 'Contents', 'Resources')
+    data_dir = os.path.join(app_base, 'Contents', 'Data')
+    
+    # Assicuriamoci che esista la cartella Resources prima di linkarla
+    os.makedirs(resources_dir, exist_ok=True)
+    os.makedirs(data_dir, exist_ok=True)
+    
+    for folder in ["assets", "tmp", "logs"]:
+        src = os.path.join(resources_dir, folder)
+        dst = os.path.join(data_dir, folder)
+        
+        # Le cartelle fisiche devono esistere in Resources
+        os.makedirs(src, exist_ok=True)
+        
+        if not os.path.exists(dst):
+            try:
+                # Da Contents/Data/cartella punta a ../Resources/cartella
+                os.symlink(os.path.join("..", "Resources", folder), dst)
+                print(f"Creato symlink relativo per {folder}")
+            except Exception as e:
+                print(f"Errore symlink per {folder}: {e}")
+

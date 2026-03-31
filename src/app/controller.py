@@ -109,11 +109,14 @@ class ApplicationController:
             return
 
         self._log(f"Genera ROI: {len(collected_frames)} frame raccolti. Avvio segmentazione YOLOE...")
-        success = self.roi_manager.generate_roi_from_video(collected_frames, "tmp/roi.json")
+        from core.paths import get_tmp_path
+        import os
+        roi_path = os.path.join(get_tmp_path(), "roi.json")
+        success = self.roi_manager.generate_roi_from_video(collected_frames, roi_path)
 
         if success:
-            self.settings.set("last_roi_path", "tmp/roi.json")
-            self._log("ROI generata automaticamente e salvata in tmp/roi.json.")
+            self.settings.set("last_roi_path", roi_path)
+            self._log(f"ROI generata automaticamente e salvata.")
         else:
             self._log("Genera ROI: fallita. Controllare i log per dettagli.")
 
