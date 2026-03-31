@@ -217,10 +217,13 @@ class ROIManager:
             lab = cv2.merge([l_channel, a, b])
             median_frame = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
 
-            os.makedirs("tmp", exist_ok=True)
-            cv2.imwrite("tmp/debug_median_frame.png", median_frame)
+            from core.paths import get_tmp_path
+            
+            tmp_dir = get_tmp_path()
+            debug_path = os.path.join(tmp_dir, "debug_median_frame.png")
+            cv2.imwrite(debug_path, median_frame)
             logger.info("Genera ROI: filtro bilaterale + CLAHE + riduzione esposizione applicati. "
-                        "Mediana salvata in tmp/debug_median_frame.png.")
+                        f"Mediana salvata in {debug_path}.")
 
             # 3. Segmentazione con YOLOE (text prompt)
             logger.info("Genera ROI: avvio segmentazione YOLOE...")

@@ -47,15 +47,9 @@ class YoloDetector:
     def _ensure_mobileclip_exists() -> None:
         """Assicura che mobileclip2_b.ts sia in assets/ invece che nella root."""
         import os
-        import sys
+        from core.paths import get_assets_path
         
-        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-            base_path = sys._MEIPASS
-        else:
-            base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-
-        assets_dir = os.path.join(base_path, 'assets')
-        os.makedirs(assets_dir, exist_ok=True)
+        assets_dir = get_assets_path()
         clip_path = os.path.join(assets_dir, "mobileclip2_b.ts")
         
         # Aggiorniamo ultralytics per fargli cercare i modelli in assets
@@ -91,12 +85,9 @@ class YoloDetector:
         """
         import os
         import platform
-        import sys
+        from core.paths import get_base_path
         
-        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-            base_path = sys._MEIPASS
-        else:
-            base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
+        base_path = get_base_path()
 
         if not os.path.isabs(base_name):
             base_name = os.path.join(base_path, base_name)
@@ -249,14 +240,9 @@ class YoloDetector:
 
         try:
             import os
-            import sys
+            from core.paths import get_assets_path
 
-            if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-                base_path = sys._MEIPASS
-            else:
-                base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-
-            model_base = os.path.join(base_path, "assets", "yoloe-26s-seg.pt")
+            model_base = os.path.join(get_assets_path(), "yoloe-26s-seg.pt")
             
             # Forza l'uso del .pt per la ROI perché i formati esportati (mlpackage/engine)
             # nascono con i text embeddings del training/export statici (person/ball). 

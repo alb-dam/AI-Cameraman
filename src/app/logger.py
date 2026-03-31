@@ -27,13 +27,9 @@ def setup_logger(level: int = logging.INFO) -> None:
         from logging.handlers import RotatingFileHandler
         import os
         
-        if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
-            base_path = sys._MEIPASS
-        else:
-            base_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..'))
-            
-        logs_dir = os.path.join(base_path, "logs")
-        os.makedirs(logs_dir, exist_ok=True)
+        from core.paths import get_logs_path
+        
+        logs_dir = get_logs_path()
         log_file = os.path.join(logs_dir, "ai_cameraman.log")
         
         file_handler = RotatingFileHandler(
