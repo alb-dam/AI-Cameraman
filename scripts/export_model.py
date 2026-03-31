@@ -52,6 +52,10 @@ def export_model():
     logger.info(f"Caricamento modello YOLOE da: {model_path}")
     # Carica il modello
     try:
+        from ultralytics import settings as ultra_settings
+        assets_dir = os.path.dirname(model_path)
+        ultra_settings.update({'weights_dir': assets_dir})
+        
         model = YOLOE(model_path)
         
         # ⚠️ FONDAMENTALE PER I MODELLI OPEN-VOCABULARY ⚠️
@@ -94,12 +98,43 @@ def export_model():
     logger.info(f"Avvio esportazione in formato '{export_format}'. **QUESTO PROCESSO POTREBBE RICHIEDERE DIVERSI MINUTI**...")
     
     try:
-        exported_path = model.export(format=export_format, **export_kwargs)
+        # Pre-check dipendenze specifiche per target
+        if export_format == "coreml":
+            try:
+                import coremltools
+            except ImportError:
+                logger.warning("Libreria 'coremltools' non trovata. Verrà tentata l'installazione automatica o potrebbe fallire.")
+                logger.info("Esegui: pip install coremltools")
+                
+        elif export_format == "onnx":
+            try:
+                import onnx
+            except ImportError:
+                logger.warning("Libreria 'onnx' non trovata. Verrà tentata l'installazione automatica o potrebbe fallire.")
+                logger.info("Esegui: pip install onnx onnxruntime")
+
+        try:
+            exported_path = model.export(format=export_format, **export_kwargs)
+        except Exception as e:
+            if export_format == "coreml" and "0-dimensional" in str(e):
+                logger.warning(f"❌ Errore noto di CoreMLTools con Python 3.13/NumPy 2.x: {e}")
+                logger.info("➡ Verrà tentato il fallback automatico al formato ONNX...")
+                export_format = "onnx"
+                export_kwargs.pop("nms", None) # NMS option not suitable for ONNX fallback generally unless configured
+                export_kwargs.pop("half", None)
+                exported_path = model.export(format=export_format, **export_kwargs)
+            else:
+                raise e
+
         logger.info("✅ Esportazione completata con successo!")
         logger.info(f"Modello salvato in: {exported_path}")
         logger.info("L'applicazione lo rileverà automaticamente se il suo nome verrà aggiornato nella configurazione o se l'estensione supportata è preferita dall'app.")
     except Exception as e:
         logger.error(f"❌ Errore critico durante l'esportazione: {e}")
+        if "coremltools" in str(e).lower() or export_format == "coreml":
+            logger.error("Assicurati di aver installato coremltools: pip install -e \".[dev]\" o pip install coremltools")
+        elif "tensorrt" in str(e).lower() or export_format == "engine":
+            logger.error("Assicurati di avere TensorRT e la libreria 'tensorrt' installata.")
         sys.exit(1)
 
 if __name__ == "__main__":

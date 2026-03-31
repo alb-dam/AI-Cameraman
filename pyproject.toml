@@ -19,11 +19,12 @@ dependencies = [
     "ultralytics",
     "PySide6",
     "opencv-python",
-    "numpy",
+    "numpy<2.4.4",
     "cyndilib",
     "pygrabber; sys_platform == 'win32'",
-    "onnx; sys_platform == 'win32'",
-    "onnxruntime-gpu; sys_platform == 'win32'",
+    "onnx",
+    "onnxruntime",
+    "coremltools>=7.2; sys_platform == 'darwin'",
     "pyobjc-framework-AVFoundation; sys_platform == 'darwin'",
     "clip @ git+https://github.com/openai/CLIP.git"
 ]
