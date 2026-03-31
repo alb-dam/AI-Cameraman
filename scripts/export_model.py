@@ -56,14 +56,20 @@ def export_model():
         assets_dir = os.path.dirname(model_path)
         ultra_settings.update({'weights_dir': assets_dir})
         
-        model = YOLOE(model_path)
-        
-        # ⚠️ FONDAMENTALE PER I MODELLI OPEN-VOCABULARY ⚠️
-        # Inserisce in modo permanente le estrazioni del testo (text-embeddings) nel grafo computazionale
-        # statico del TensorRT / CoreML / ONNX. Senza questo diventeranno un coco80 base rotto.
-        logger.info("Impostazione statiche delle classi (person, sports ball) per l'export...")
-        model.set_classes(["person", "sports ball"])
-        
+        # Cambia temporaneamente cartella di lavoro in assets/
+        # Questo costringe ultralytics a scaricare dipendenze implicite (es. mobileclip2_b.ts) lì dentro
+        original_cwd = os.getcwd()
+        os.chdir(assets_dir)
+        try:
+            model = YOLOE(model_path)
+            
+            # ⚠️ FONDAMENTALE PER I MODELLI OPEN-VOCABULARY ⚠️
+            # Inserisce in modo permanente le estrazioni del testo (text-embeddings) nel grafo computazionale
+            logger.info("Impostazione statiche delle classi (person, sports ball) per l'export...")
+            model.set_classes(["person", "sports ball"])
+        finally:
+            os.chdir(original_cwd)
+            
     except Exception as e:
         logger.error(f"Errore nel caricamento del modello: {e}")
         sys.exit(1)
